@@ -1,7 +1,11 @@
 #!/usr/bin/env python
 
-import os
+from __future__ import absolute_import
+
 import ast
+import io
+import os
+
 from setuptools import setup, find_packages
 
 with open('linchpin/version.py') as f:
@@ -10,37 +14,54 @@ with open('linchpin/version.py') as f:
             ver = ast.parse(line).body[0].value.s
             break
 
-# reading requirements from requirements.txt
 dir_path = os.path.dirname(os.path.realpath(__file__))
-reqs_file = 'requirements.txt'.format(dir_path)
-with open(reqs_file) as f:
+
+# reading description from README.rst
+with io.open(os.path.join(dir_path, 'README.rst'), encoding='utf-8') as f:
+    long_description = f.read()
+
+# reading requirements from requirements.txt
+with io.open(os.path.join(dir_path, 'requirements.txt')) as f:
     required = f.read().splitlines()
 
-setup_required = list(required)
-setup_required.append('pytest-runner')
+install_required = list(required)
 
 ignore_dir = ['.git']
+
+azure_deps = open("requirements-azure.txt", "r").readlines()
 
 setup(
     name='linchpin',
     version=ver,
-    description='Ansible based multi cloud provisioner',
+    description='Ansible-based multi-cloud provisioner',
+    long_description=long_description,
     author='samvaran kashyap rallabandi',
     author_email='linchpin@redhat.com',
     url='http://linchpin.readthedocs.io/',
-    setup_requires=setup_required,
-    install_requires=required,
+    install_requires=install_required,
     entry_points='''
         [console_scripts]
         linchpin=linchpin.shell:runcli
     ''',
-    tests_require=["pytest", "nose", "mock", "coverage", "flake8"],
+    tests_require=["pytest<=4.4.0",
+                   "nose",
+                   "mock",
+                   "coverage",
+                   "flake8",
+                   "molecule<=2.22",
+                   "radon"],
     extras_require={
         'krbV': ["python-krbV"],
-        'beaker': ['beaker-client>=23.3', 'python-krbV'],
-        'docs': ["docutils", "sphinx", "sphinx_rtd_theme"],
-        'tests': ["nose", "mock", "coverage", "flake8"],
+        'beaker': ['beaker-client>=27.0', 'bottle'],
+        'docs': ["docutils", "sphinx", "sphinx_rtd_theme", "sphinx-automodapi"],
+        'tests': ["nose", "mock", "coverage", "flake8",
+                  "pytest<=4.4.0", "pytest-runner", "molecule<=2.22",
+                  "molecule[docker]", "radon"],
         'libvirt': ["libvirt-python>=3.0.0", "lxml"],
+        'vmware': ["PyVmomi>=6.7.1"],
+        'docker': ["docker-py>=1.7.0"],
+        'azure': azure_deps,
+        'openshift': ['openshift>=0.8.6,<0.8.8', 'kubernetes-validate']
     },
     zip_safe=False,
     packages=find_packages(),

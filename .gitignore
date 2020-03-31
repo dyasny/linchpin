@@ -10,7 +10,7 @@ ansible.cfg
 docs/build/
 _autosummary
 docs/source/generated/
-docs/source/examples/workspace/resources
+resources
 
 # packaging files
 build
@@ -47,3 +47,9 @@ keys/
 duffy-ansible-module
 docs/source/examples/workspace/dummy-data.yml
 
+# do not upload secure data
+docs/source/examples/workspaces/**/credentials
+
+# ignore results of coverage tests
+htmlcov
+*,cover

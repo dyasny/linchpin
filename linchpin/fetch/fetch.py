@@ -1,22 +1,29 @@
+from __future__ import absolute_import
 import os
+import ast
 import shutil
+import six
+
 try:
     import configparser
 except ImportError:
-        import ConfigParser as configparser
+    import six.moves.configparser as configparser
 
 
 from abc import ABCMeta, abstractmethod
 from linchpin.exceptions import LinchpinError
 
 
-class Fetch(object):
-    __metaclass__ = ABCMeta
+class Fetch(six.with_metaclass(ABCMeta, object)):
+    def __init__(self, ctx, fetch_type, dest, root='', root_ws='', ref=None):
+        """
+        """
 
-    def __init__(self, ctx, fetch_type, dest, root):
         self.ctx = ctx
         self.fetch_type = fetch_type
         self.root = root
+        self.root_ws = root_ws
+        self.ref = ref
         self.tempdirs = []
         self.dest = os.path.abspath(os.path.realpath(dest))
         self.config_path = os.path.abspath(os.path.join(os.path.expanduser('~'),
@@ -28,9 +35,10 @@ class Fetch(object):
         pass
 
     def copy_files(self):
+
         if self.fetch_type == 'workspace':
-            for path in self.tempdirs:
-                self.copy_dir(path, self.dest)
+            src_dir = '{0}/{1}'.format(self.td, self.root)
+            self.copy_dir(src_dir, self.dest)
         else:
             self.transfer_section(self.fetch_type)
 
@@ -40,24 +48,25 @@ class Fetch(object):
         dir_exists = True
         if section not in os.listdir(self.dest):
             dir_exists = False
-            os.mkdir(dest_dir)
+            os.makedirs(dest_dir)
 
-        for path in self.tempdirs:
-            src_dir = os.path.join(path, section)
-            if not os.path.exists(src_dir):
-                if not dir_exists:
-                    shutil.rmtree(dest_dir)
-                raise LinchpinError('The {0} directory does not exist in '
-                                    '{1}'.format(self.fetch_type, self.src))
-            self.copy_dir(src_dir, dest_dir)
+        src_dir = os.path.join('{0}/{1}'.format(self.td, self.root), section)
+        if not os.path.exists(src_dir):
+            if not dir_exists:
+                shutil.rmtree(dest_dir)
+            raise LinchpinError('The {0} directory does not exist in '
+                                '{1}'.format(self.fetch_type, self.src))
+        self.copy_dir(src_dir, dest_dir)
+
 
     def copy_dir(self, src, dest):
+
         for root, dirs, files in os.walk(src):
             files = [f for f in files if not f[0] == '.']
             dirs[:] = [d for d in dirs if not d[0] == '.']
             if not os.path.isdir(root):
                 os.makedirs(root)
-            for file in files:
+            for f in files:
                 rel_path = root.replace(src, '').lstrip(os.sep)
                 dest_path = os.path.join(dest, rel_path)
 
@@ -70,30 +79,51 @@ class Fetch(object):
                                                 ' in destination directory'
                                                 .format(e.filename))
 
-                s = os.path.join(root, file)
-                d = os.path.join(dest_path, file)
+                s_file = os.path.join(root, f)
+                d_file = os.path.join(dest_path, f)
 
-                if (not os.path.exists(d)) or (os.stat(d).st_mtime -
-                                               os.stat(dest).st_mtime > 1):
+                # fetch.always_update_workspace flag determines whether or
+                # not to update. can be overwritten on the cli with --nocache.
+                cache_ws = (ast.literal_eval(
+                            self.ctx.get_cfg('fetch', 'cache_ws',
+                                             default='True')))
+
+                cp_files = False
+                if not cache_ws:
+                    cp_files = True
+                else:
+                    if not os.path.exists(d_file):
+                        cp_files = True
+                    else:
+                        cache_days = int(self.ctx.get_cfg('fetch',
+                                                          'cache_days',
+                                                          default=1))
+                        s_file_mtime = int(os.stat(s_file).st_mtime)
+                        d_file_mtime = int(os.stat(d_file).st_mtime)
+
+                        if (s_file_mtime - d_file_mtime) >= cache_days:
+                            cp_files = True
+
+                if cp_files:
+
                     try:
-                        if os.path.islink(s) and os.path.exists(os.readlink(s)):
-                            linkto = os.readlink(s)
-                            os.symlink(linkto, d)
-                        else:
-                            shutil.copy2(s, d)
-                    except (IOError, OSError):
-                        pass
+                        if (os.path.islink(s_file) and
+                                os.path.exists(os.readlink(s_file))):
+                            s_file = os.readlink(s_file)
+
+                        shutil.copy2(s_file, d_file)
+                    except (IOError, OSError) as e:
+                        self.ctx.log_state(e)
 
 
     def read_cfg(self):
-        config = configparser.ConfigParser()
+        config = configparser.SafeConfigParser()
         config.optionxform = str
 
         cfgs = {}
         if not os.path.exists(self.config_path):
             config.add_section('http')
             config.add_section('git')
-            config.add_section('local')
             with open(self.config_path, 'w') as configfile:
                 config.write(configfile)
         else:
@@ -107,8 +137,9 @@ class Fetch(object):
                 cfgs[section][k] = v
         return cfgs
 
+
     def write_cfg(self, section, key, value):
-        config = configparser.ConfigParser()
+        config = configparser.SafeConfigParser()
         config.optionxform = str
         config.read(self.config_path)
         config.set(section, key, value)

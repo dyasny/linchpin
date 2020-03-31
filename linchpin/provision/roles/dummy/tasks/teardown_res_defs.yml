@@ -1,4 +1,3 @@
----
 - name: "Get the resource name"
   set_fact:
     dummy_name: "{{ res_def['name'] }}"
@@ -6,7 +5,7 @@
 - name: "Assign dummy name using uhash value"
   set_fact:
     dummy_name: "{{ dummy_name + '-' + uhash }}"
-  when: enable_uhash
+  when: use_uhash
 
 - name: "Teardown dummy resources by looping on count"
   dummy:
@@ -22,4 +21,3 @@
 - name: "Append outputitem to topology_outputs"
   set_fact:
     topology_outputs_dummy: "{{ topology_outputs_dummy + tmp }}"
-

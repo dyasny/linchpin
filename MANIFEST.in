@@ -1,4 +1,5 @@
 include requirements.txt
+include requirements-azure.txt
 include README.rst
 include CONTRIBUTING.rst
 include LICENSE
@@ -14,6 +15,15 @@ prune linchpin/tests/**/__pycache__
 
 recursive-include linchpin/provision *
 recursive-exclude linchpin/provision *.pyc
+
+graft linchpin/hooks
+recursive-include linchpin/hooks *
+recursive-exclude linchpin/hooks *.pyc
+
+graft linchpin/MockUtils
+recursive-include linchpin/MockUtils *
+recursive-exclude linchpin/MockUtils *.pyc
+
 
 prune config
 prune vars

@@ -43,9 +43,13 @@ definition, the following options are available.
 |                    |       |          | * name (req)  | with an incremented value (eth0) |
 |                    |       |          | * ip          |                                  |
 |                    |       |          | * mac         | .. note:: Network must exist     |
-|                    |       |          |               |                                  |
+|                    |       |          | *static_ip_reserved |                                  |
 +--------------------+-------+----------+---------------+---------------------+------------+
 | image_src          | false | string   | virt-install  |                     |            |
++--------------------+-------+----------+---------------+---------------------+------------+
+| disk_cache         | false | string   |               |                     |            |
++--------------------+-------+----------+---------------+---------------------+------------+
+| disk_type          | false | string   | xml: disk     | virtio_blk          |            |
 +--------------------+-------+----------+---------------+---------------------+------------+
 | network_bridge     | false | string   | virt-install  | virbr0              |            |
 +--------------------+-------+----------+---------------+---------------------+------------+
@@ -62,7 +66,9 @@ definition, the following options are available.
 +--------------------+-------+----------+---------------+---------------------+------------+
 | count              | false | string   | N/A           |                     |            |
 +--------------------+-------+----------+---------------+---------------------+------------+
-
+| static_ip_reserved | false | boolean  | networks      |If enabled, the ip in the returned|
+|                    |       |          |               |information will not change       |
++--------------------+-------+----------+---------------+---------------------+------------+
 libvirt_network
 ---------------
 
@@ -79,30 +85,32 @@ Within Linchpin, the :term:`libvirt_network` :term:`resource_definition` has mor
 options than what are shown in the examples above. For each :term:`libvirt_network`
 definition, the following options are available.
 
-+--------------------+-------+----------+-----------------+---------------------+--------------------------+
-| Parameter          | req'd | type     | where used      | default             | comments                 |
-+====================+=======+==========+=================+=====================+==========================+
-| role               | true  | string   | role            |                     |                          |
-+--------------------+-------+----------+-----------------+---------------------+--------------------------+
-| name               | true  | string   | module: name    |                     |                          |
-+--------------------+-------+----------+-----------------+---------------------+--------------------------+
-| uri                | false | string   | module: name    |  qemu:///system     |                          |
-+--------------------+-------+----------+-----------------+---------------------+--------------------------+
-| ip                 | true  | string   | xml: ip         |                     |                          |
-+--------------------+-------+----------+-----------------+---------------------+--------------------------+
-| dhcp_start         | false | string   | xml: dhcp_start |                     |                          |
-+--------------------+-------+----------+-----------------+---------------------+--------------------------+
-| dhcp_end           | false | string   | xml: dhcp_end   |                     |                          |
-+--------------------+-------+----------+-----------------+---------------------+--------------------------+
-| domain             | false | string   | xml: domain     |                     | Automated DNS for guests |
-+--------------------+-------+----------+-----------------+---------------------+--------------------------+
-| forward_mode       | false | string   | xml: forward    | nat                 |                          |
-+--------------------+-------+----------+-----------------+---------------------+--------------------------+
-| forward_dev        | false | string   | xml: forward    |                     |                          |
-+--------------------+-------+----------+-----------------+---------------------+--------------------------+
-| bridge             | false | string   | xml: bridge     |                     |                          |
-+--------------------+-------+----------+-----------------+---------------------+--------------------------+
-
++--------------------+-------+----------+-----------------+---------------------+----------------------------------+
+| Parameter          | req'd | type     | where used      | default             | comments                         |
++====================+=======+==========+=================+=====================+==================================+
+| role               | true  | string   | role            |                     |                                  |
++--------------------+-------+----------+-----------------+---------------------+----------------------------------+
+| name               | true  | string   | module: name    |                     |                                  |
++--------------------+-------+----------+-----------------+---------------------+----------------------------------+
+| uri                | false | string   | module: name    |  qemu:///system     |                                  |
++--------------------+-------+----------+-----------------+---------------------+----------------------------------+
+| ip                 | true  | string   | xml: ip         |                     |                                  |
++--------------------+-------+----------+-----------------+---------------------+----------------------------------+
+| dhcp_start         | false | string   | xml: dhcp_start |                     |                                  |
++--------------------+-------+----------+-----------------+---------------------+----------------------------------+
+| dhcp_end           | false | string   | xml: dhcp_end   |                     |                                  |
++--------------------+-------+----------+-----------------+---------------------+----------------------------------+
+| domain             | false | string   | xml: domain     |                     | Automated DNS for guests         |
++--------------------+-------+----------+-----------------+---------------------+----------------------------------+
+| forward_mode       | false | string   | xml: forward    | nat                 |                                  |
++--------------------+-------+----------+-----------------+---------------------+----------------------------------+
+| forward_dev        | false | string   | xml: forward    |                     |                                  |
++--------------------+-------+----------+-----------------+---------------------+----------------------------------+
+| bridge             | false | string   | xml: bridge     |                     |                                  |
++--------------------+-------+----------+-----------------+---------------------+----------------------------------+
+| delete_on_destroy  | false | boolean  | N/A             | False               | If true, libvirt destroy will    |
+|                    |       |          |                 |                     | destroy and undefine the network |
++--------------------+-------+----------+-----------------+---------------------+----------------------------------+
 
 .. note:: This resource will not be torn down during a :term:`destroy` action.
    This is because other resources may depend on the now existing resource.
@@ -174,7 +182,4 @@ https://libvirt.org for any additional configurations.
 Credentials Management
 ----------------------
 
-Libvirt doesn't require credentials via LinchPin. Multiple options are
-available for authenticating against a Libvirt daemon (libvirtd). Most methods
-are detailed `here <https://libvirt.org/auth.html>`_.  If desired, the uri for
-the resource can be set using one of these mechanisms.
+.. include:: credentials/libvirt.rst

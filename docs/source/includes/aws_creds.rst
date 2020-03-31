@@ -1,3 +1,7 @@
+One method to provide AWS credentials that can be loaded by LinchPin is to use
+the INI format that the `AWS CLI tool <https://docs.aws.amazon.com/cli/latest/userguide/cli-config-files.html>`_
+uses.
+
 Credentials File
 ~~~~~~~~~~~~~~~~
 
@@ -57,6 +61,7 @@ By default, credential files are stored in the `default_credentials_path`, which
    :dirs1.5:`default_config_path <workspace/linchpin.conf#L22>` value, and
    can be overridden in the :docs1.5:`linchpin.conf`.
 
+The default path is "./credentials"
 The credentials path (or ``creds_path``) can be overridden in two ways.
 
 It can be passed in when running the linchpin command.

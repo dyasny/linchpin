@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from __future__ import print_function
+from __future__ import absolute_import
 
 import os
 import sys
@@ -15,6 +16,7 @@ from linchpin.exceptions import LinchpinError
 from linchpin.cli.context import LinchpinCliContext
 from linchpin.shell.click_default_group import DefaultGroup
 from linchpin.shell.mutually_exclusive import MutuallyExclusiveOption
+import six
 
 
 pass_context = click.make_pass_decorator(LinchpinCliContext, ensure=True)
@@ -39,7 +41,7 @@ def _handle_results(ctx, results, return_code):
     output = 'Nothing to do. Check input and try again.'
     rcs = [return_code]
 
-    for k, v in results.iteritems():
+    for k, v in six.iteritems(results):
 
         output = '\nID: {0}\n'.format(k)
         output += 'Action: {0}\n'.format(v['action'])
@@ -48,8 +50,8 @@ def _handle_results(ctx, results, return_code):
                                                                 'uHash',
                                                                 'Exit Code')
         output += '-------------------------------------------------\n'
-        for target, run_data in v['summary_data'].iteritems():
-            for rundb_id, data in run_data.iteritems():
+        for target, run_data in six.iteritems(v['summary_data']):
+            for rundb_id, data in six.iteritems(run_data):
 
                 output += '{0:<20}\t{1:>6}\t{2:>5}'.format(target,
                                                            rundb_id,
@@ -63,8 +65,9 @@ def _handle_results(ctx, results, return_code):
 
         task_results = v.get('results_data')
         if task_results:
-            for target, results in task_results.iteritems():
-                if results['task_results']:
+            for target, results in six.iteritems(task_results):
+                if results['task_results'] and \
+                   (not isinstance(results['task_results'][0], str)):
                     tasks = results['task_results'][0].get('failed')
 
                     if not isinstance(tasks, int) and len(tasks):
@@ -114,7 +117,8 @@ def _handle_results(ctx, results, return_code):
                    "If template data is from a file, it must be"
                    " prepended with an '@' character."
               )
-@click.option('-o', '--output-pinfile', metavar='OUTPUT_PINFILE',
+@click.option('-o', '--output-file', '--output-pinfile', 'outfile',
+              metavar='OUTPUT_FILE',
               help='Write out PinFile to provided location')
 @click.option('-w', '--workspace', type=click.Path(), envvar='WORKSPACE',
               help='Use the specified workspace. Also works if the'
@@ -123,12 +127,17 @@ def _handle_results(ctx, results, return_code):
               help='Enable verbose output')
 @click.option('--version', is_flag=True,
               help='Prints the version and exits')
-@click.option('--creds-path', type=click.Path(), envvar='CREDS_PATH',
+@click.option('--creds-path', type=click.Path(),
+              envvar='CREDS_PATH',
               help='Use the specified credentials path. Also works'
                    ' if CREDS_PATH environment variable is set')
+@click.option('--ask-vault-pass', is_flag=True, default=False,
+              help='Prompts for vault password')
+@click.option('--no-monitor', is_flag=True, default=False,
+              help='Disalbe multiprocessing for monitoring Ansible execution')
 @pass_context
-def runcli(ctx, config, pinfile, template_data, output_pinfile,
-           workspace, verbose, version, creds_path):
+def runcli(ctx, config, pinfile, template_data, outfile, workspace, verbose,
+           version, creds_path, ask_vault_pass, no_monitor):
     """linchpin: hybrid cloud orchestration"""
 
     ctx.load_config(lpconfig=config)
@@ -140,9 +149,10 @@ def runcli(ctx, config, pinfile, template_data, output_pinfile,
 
     # if the pinfile is a template, data will be passed here
     ctx.pf_data = template_data
-
-    if output_pinfile:
-        ctx.set_cfg('tmp', 'output_pinfile', output_pinfile)
+    ctx.outfile = None
+    if outfile:
+        ctx.outfile = outfile
+        ctx.set_cfg('tmp', 'outfile', outfile)
 
     ctx.pinfile = None
     if pinfile:
@@ -152,6 +162,11 @@ def runcli(ctx, config, pinfile, template_data, output_pinfile,
         ctx.log_state('linchpin version {0}'.format(ctx.version))
         sys.exit(0)
 
+    ctx.no_monitor = False
+    if no_monitor:
+        ctx.no_monitor = True
+        ctx.set_evar('no_monitor', True)
+
     if creds_path is not None:
         ctx.set_evar('creds_path',
                      os.path.realpath(os.path.expanduser(creds_path)))
@@ -159,6 +174,8 @@ def runcli(ctx, config, pinfile, template_data, output_pinfile,
     if workspace is not None:
         ctx.workspace = os.path.realpath(os.path.expanduser(workspace))
         ctx.log_debug("ctx.workspace: {0}".format(ctx.workspace))
+
+    ctx.ask_vault_pass = ask_vault_pass
 
     # global LinchpinCli placeholder
     global lpcli
@@ -176,20 +193,41 @@ def help(ctx):
 
 
 @runcli.command('init', short_help='Initializes a linchpin project.')
+@click.argument('provider', metavar='PROVIDER', required=False, nargs=1)
 @pass_context
-def init(ctx):
+def init(ctx, provider):
     """
     Initializes a linchpin project, which generates an example PinFile, and
     creates the necessary directory structure for topologies and layouts.
 
+    Utilizes lp_fetch with the following parameters:
+
+    remote:         git://github.com/CentOS-PaaS-SIG/linchpin
+    root:           workspaces
+    fetch_type:     workspace
+    fetch_protocol: FetchGit
+    fetch_ref:      master
+    dest_ws:        Unused, will use workspace/provider
+    nocache:        True
+
+
     """
 
-    # add a providers option someday
-    providers = None
+    remote = ctx.get_cfg('init', 'remote',
+                         default='git://github.com/CentOS-PaaS-SIG/linchpin')
+    root = ctx.get_cfg('init', 'root', default='workspaces/dummy')
+    fetch_type = ctx.get_cfg('init', 'fetch_type', default='workspace')
+    fetch_proto = 'FetchGit'
+    fetch_ref = ctx.get_cfg('init', 'fetch_ref', default='master')
+    nocache = ast.literal_eval(ctx.get_cfg('init', 'nocache', default='True'))
+
+    if provider:
+        root = 'workspaces/{0}'.format(provider)
 
     try:
-        # lpcli.lp_init(pf_w_path, targets) # TODO implement targets option
-        lpcli.lp_init(providers=providers)
+        lpcli.lp_fetch(remote, root=root, fetch_type=fetch_type,
+                       fetch_protocol=fetch_proto, fetch_ref=fetch_ref,
+                       dest_ws=None, nocache=nocache)
     except LinchpinError as e:
         ctx.log_state(e)
         sys.exit(1)
@@ -204,8 +242,23 @@ def init(ctx):
 @click.option('-t', '--tx-id', metavar='tx_id', type=int,
               help='Provision resources using the Transaction ID (tx-id)',
               cls=MutuallyExclusiveOption, mutually_exclusive=["run_id"])
+@click.option('--inventory-format', '--if', 'inventory_format', default="cfg",
+              metavar='INVENTORY_FORMAT', help="Inventory format cfg/json")
+@click.option('--ignore-failed-hooks', '--ifh', 'ignore_failed_hooks',
+              is_flag=True, default=False, metavar='IGNORE_FAILED_HOOKS',
+              help='Ignores failed hooks')
+@click.option('--no-hooks', '--nh', 'no_hooks', is_flag=True, default=None,
+              metavar='NO_HOOKS', help='Do not run hooks')
+@click.option('--disable-uhash', type=str, default=None,
+              metavar='DISABLE_UHASH')
+@click.option('--env-vars', type=(str, str), multiple=True, metavar='ENV_VARS')
+@click.option('--use-shell', '--us', metavar='USE_SHELL', default=False,
+              is_flag=True, help='Use subprocess for linchpin run')
+@click.option('--no-progress', '--np', 'no_progress', is_flag=True,
+              default=None, metavar='NO_PROGRESS', help='Do not progress bar')
 @pass_context
-def up(ctx, targets, run_id, tx_id):
+def up(ctx, targets, run_id, tx_id, inventory_format, ignore_failed_hooks,
+       no_hooks, disable_uhash, env_vars, use_shell, no_progress):
     """
     Provisions nodes from the given target(s) in the given PinFile.
 
@@ -223,9 +276,32 @@ def up(ctx, targets, run_id, tx_id):
     run-id:     Use the data from the provided run_id value
     """
 
+    vault_pass = os.environ.get('VAULT_PASSWORD', '')
+
+    ctx.env_vars = env_vars
+
+    if ctx.ask_vault_pass:
+        vault_pass = click.prompt("enter vault password", hide_input=True)
+
+    ctx.set_evar('vault_pass', vault_pass)
+
+    if ignore_failed_hooks:
+        ctx.set_cfg("hook_flags", "ignore_failed_hooks", ignore_failed_hooks)
+    if no_hooks:
+        ctx.set_cfg("hook_flags", "no_hooks", no_hooks)
+    if no_progress:
+        ctx.set_cfg("progress_bar", "no_progress", str(no_progress))
+    if disable_uhash:
+        ctx.set_evar("disable_uhash_targets", disable_uhash.split(','))
+
+    if use_shell:
+        ctx.set_cfg("ansible", "use_shell", use_shell)
+
     if tx_id:
         try:
-            return_code, results = lpcli.lp_up(targets=targets, tx_id=tx_id)
+            return_code, results = lpcli.lp_up(targets=targets,
+                                               tx_id=tx_id,
+                                               inv_f=inventory_format)
             _handle_results(ctx, results, return_code)
         except LinchpinError as e:
             ctx.log_state(e)
@@ -237,7 +313,9 @@ def up(ctx, targets, run_id, tx_id):
         try:
             return_code, results = lpcli.lp_up(targets=targets,
                                                run_id=run_id,
-                                               tx_id=tx_id)
+                                               tx_id=tx_id,
+                                               inv_f=inventory_format,
+                                               env_vars=env_vars)
             _handle_results(ctx, results, return_code)
         except LinchpinError as e:
             ctx.log_state(e)
@@ -260,8 +338,19 @@ def up(ctx, targets, run_id, tx_id):
 @click.option('-t', '--tx-id', metavar='tx_id', type=int,
               help='Destroy resources using the transaction ID (tx-id)',
               cls=MutuallyExclusiveOption, mutually_exclusive=["run_id"])
+@click.option('--ignore-failed-hooks', '--ifh', 'ignore_failed_hooks',
+              metavar='ignore_failed_hooks', is_flag=True, default=False,
+              help='Ignores failed hooks')
+@click.option('--no-hooks', '--nh', 'no_hooks', metavar='NO_HOOKS',
+              is_flag=True, help='Do not run hooks')
+@click.option('--env-vars', type=(str, str), multiple=True, metavar='ENV_VARS')
+@click.option('--use-shell', '--us', metavar='USE_SHELL', default=False,
+              is_flag=True, help='Use subprocess for linchpin run')
+@click.option('--no-progress', '--np', 'no_progress', is_flag=True,
+              default=None, metavar='NO_PROGRESS', help='Do not progress bar')
 @pass_context
-def destroy(ctx, targets, run_id, tx_id):
+def destroy(ctx, targets, run_id, tx_id, ignore_failed_hooks, no_hooks,
+            env_vars, use_shell, no_progress):
     """
     Destroys resources using either the run_id or tx_id (mutually exclusive).
 
@@ -275,12 +364,28 @@ def destroy(ctx, targets, run_id, tx_id):
     the appropriate PinFile will be destroyed.
 
     """
+    vault_pass = os.environ.get('VAULT_PASSWORD', '')
+    if ctx.ask_vault_pass:
+        vault_pass = click.prompt("enter vault password", hide_input=True)
+
+    ctx.set_evar('vault_pass', vault_pass)
+
+    if ignore_failed_hooks:
+        ctx.set_cfg("hook_flags", "ignore_failed_hooks", ignore_failed_hooks)
+    if no_hooks:
+        ctx.set_cfg("hook_flags", "no_hooks", no_hooks)
+    if no_progress:
+        ctx.set_cfg("progress_bar", "no_progress", no_progress)
+    if use_shell:
+        ctx.set_cfg("ansible", "use_shell", use_shell)
 
     if tx_id:
         try:
             return_code, results = lpcli.lp_destroy(targets=targets,
-                                                    tx_id=tx_id)
+                                                    tx_id=tx_id,
+                                                    env_vars=env_vars)
             _handle_results(ctx, results, return_code)
+
         except LinchpinError as e:
             ctx.log_state(e)
             sys.exit(1)
@@ -291,33 +396,51 @@ def destroy(ctx, targets, run_id, tx_id):
         try:
             return_code, results = lpcli.lp_destroy(targets=targets,
                                                     run_id=run_id,
-                                                    tx_id=tx_id)
+                                                    tx_id=tx_id,
+                                                    env_vars=env_vars)
             _handle_results(ctx, results, return_code)
         except LinchpinError as e:
             ctx.log_state(e)
             sys.exit(1)
 
 
-
 @runcli.command()
-@click.argument('fetch_type', default=None, required=False, nargs=-1)
 @click.argument('remote', default=None, required=True, nargs=1)
-@click.option('-r', '--root', default=None, required=False,
-              help='Use this to specify the subdirectory of the workspace of'
-              ' the root url')
+@click.option('-t', '--type', 'fetch_type', metavar='TYPE', required=False,
+              default='workspace', help='Which component of a workspace to'
+              ' fetch. (Default: workspace)')
+@click.option('-r', '--root', metavar='ROOT', default='',
+              help='Use this to specify the location of the workspace'
+                   ' within the root url. If root is not set, the root'
+                   ' of the given remote will be used.')
+@click.option('--dest', 'dest_ws', metavar='DEST', default=None,
+              help='Workspaces destination, the fetched workspace will be'
+                   ' relative to this location. (Overrides -w/--workspace)')
+@click.option('--branch', 'fetch_ref', metavar='REF', default=None,
+              help='Specify the git branch. Used only with'
+                   ' git protocol (eg. master).')
+@click.option('--git', 'fetch_protocol', flag_value='FetchGit', default=True,
+              help='Remote is a git repository (default)')
+@click.option('--web', 'fetch_protocol', flag_value='FetchHttp',
+              help='Remote is a web directory')
+@click.option('--nocache', is_flag=True,
+              help='Do not check the cached time, just copy the data to the'
+                   ' destination')
 @pass_context
-def fetch(ctx, fetch_type, remote, root):
+def fetch(ctx, remote, fetch_type, root, dest_ws,
+          fetch_ref, fetch_protocol, nocache):
     """
-    Fetches a specified linchpin workspace or component from a remote location.
-
-    fetch_type:     Specifies which component of a workspace the user wants to
-    fetch. Types include: topology, layout, resources, hooks, workspace
-
-    remote:         The URL or URI of the remote directory
+    Fetches a specified linchpin workspace or component from a remote location
 
     """
+
+    if not fetch_type:
+        fetch_type = 'workspace'
+
     try:
-        lpcli.lp_fetch(remote, root=root, fetch_type=''.join(fetch_type))
+        lpcli.lp_fetch(remote, root=root, fetch_type=fetch_type,
+                       fetch_protocol=fetch_protocol, fetch_ref=fetch_ref,
+                       dest_ws=dest_ws, nocache=nocache)
     except LinchpinError as e:
         ctx.log_state(e)
         sys.exit(1)
@@ -336,8 +459,20 @@ def fetch(ctx, fetch_type, remote, root):
               metavar='TX_ID', required=False,
               help="Display a specific transaction by ID (tx_id)."
                    " Only works with '--view=tx'")
+@click.option('--output-format', type=str, default="cfg",
+              metavar='output_format', required=False,
+              help="Inventory output format")
+@click.option('--output-type', type=str,
+              metavar='output_type', required=False,
+              help="default inventory")
+@click.option('--target', metavar='target', default="all",
+              help='If multiple targets are mentioned \
+                    takes parameter for target to be used.\
+                    By default all are displayed\
+                    displayed')
 @pass_context
-def journal(ctx, targets, fields, count, view, tx_id):
+def journal(ctx, targets, fields, count, view,
+            tx_id, output_format, output_type, target):
     """
     Display information stored in Run Database
 
@@ -361,6 +496,22 @@ def journal(ctx, targets, fields, count, view, tx_id):
     (Default: action, uhash, rc. Additional fields: start, end)
     """
 
+    if output_type == "inventory":
+        inventories = lpcli._write_to_inventory(inv_path=ctx.outfile,
+                                                inv_format=output_format)
+        if target == "all":
+            click.echo("By default all targets inventories are displayed to stdout\
+                        For specific target please use --target option")
+            for target in inventories:
+                click.echo(inventories[target])
+        else:
+            try:
+                click.echo(inventories[target])
+            except IndexError as e:
+                click.echo("Invalid target")
+                click.echo(e.message)
+        return inventories
+
     if view == 'target':
 
         try:
@@ -370,7 +521,8 @@ def journal(ctx, targets, fields, count, view, tx_id):
             ctx.log_state(e)
             sys.exit(1)
 
-        all_fields = json.loads(lpcli.get_cfg('lp', 'rundb_schema')).keys()
+        lpcli_cfg = lpcli.get_cfg('lp', 'rundb_schema')
+        all_fields = list(json.loads(lpcli_cfg).keys())
 
         if not fields:
             fields = ['action', 'uhash', 'rc']
@@ -393,10 +545,9 @@ def journal(ctx, targets, fields, count, view, tx_id):
         output += '\n'
         output += '--------------------------------------------------'
 
-
         if len(journal):
-            for target, values in journal.iteritems():
-                keys = values.keys()
+            for target, values in six.iteritems(journal):
+                keys = list(values.keys())
 
                 if len(keys):
                     print('\nTarget: {0}'.format(target), file=sys.stderr)
@@ -412,7 +563,6 @@ def journal(ctx, targets, fields, count, view, tx_id):
                 else:
                     no_records.append(target)
 
-
             if no_records:
                 no_out = '\nNo records for targets:'
 
@@ -425,6 +575,7 @@ def journal(ctx, targets, fields, count, view, tx_id):
             print('No targets available for journal.'
                   ' Please provision something. :)', file=sys.stderr)
         print('\n')
+        ctx.log_state(output)
 
     elif view == 'tx':
 
@@ -433,7 +584,7 @@ def journal(ctx, targets, fields, count, view, tx_id):
             if not len(tx_id):
                 journal = OrderedDict(reversed(sorted(j.items())))
             else:
-                journal = OrderedDict(j.items())
+                journal = OrderedDict(list(j.items()))
         except LinchpinError as e:
             ctx.log_state(e)
             sys.exit(1)
@@ -441,19 +592,20 @@ def journal(ctx, targets, fields, count, view, tx_id):
         output = ''
 
         if len(journal):
-            for lp_id, v in journal.iteritems():
+            for lp_id, v in six.iteritems(journal):
 
                 if v:
                     output += '\nID: {0}\t\t\t'.format(lp_id)
                     output += 'Action: {0}\n'.format(v['action'])
                     output += '\n{0:<20}\t{1:>6}'.format('Target', 'Run ID')
-                    output += '\t{0:<5}\t{1:<10}\n'.format('uHash', 'Exit Code')
+                    output += '\t{0:<5}\t{1:<10}\n'.format('uHash',
+                                                           'Exit Code')
                     output += '----------------------------------------------'
                     output += '---\n'
 
                     for targets in v['targets']:
-                        for target, values in targets.iteritems():
-                            for rundb_id, data in values.iteritems():
+                        for target, values in six.iteritems(targets):
+                            for rundb_id, data in six.iteritems(values):
                                 output += '{0:<20}\t{1:>6}\t'.format(target,
                                                                      rundb_id)
                                 output += '{0:>5}'.format(data['uhash'])
@@ -463,12 +615,105 @@ def journal(ctx, targets, fields, count, view, tx_id):
                     output += '==========\n'
 
         else:
-                output += '\n==================NO TRANSACTIONS======'
-                output += '==========\n'
+            output += '\n==================NO TRANSACTIONS======'
+            output += '==========\n'
 
-
-        # PRINT OUTPUT RESULTS HERE
         ctx.log_state(output)
+
+
+@runcli.command()
+@click.option('--old-schema', '-o', is_flag=True)
+@click.argument('targets', metavar='TARGETS', required=False,
+                nargs=-1)
+@pass_context
+def validate(ctx, targets, old_schema):
+    """
+    Validate topologies for the given target(s) in the given PinFile.
+
+    The data from the targets is obtained from the PinFile (default).
+
+    targets:    Validate ONLY the listed target(s). If omitted, ALL targets in
+    the appropriate PinFile will be validate
+
+    """
+
+    try:
+        old_schema = False
+        return_code, results = lpcli.lp_validate(targets=targets,
+                                                 old_schema=old_schema)
+        for target, item in six.iteritems(results):
+            result = ""
+            for kind, outcome in six.iteritems(item):
+                if outcome == "valid" or outcome == "valid under old schema":
+                    result += "[SUCCESS] {0} for target '{1}' is "\
+                        "{2}\n".format(kind, target, outcome)
+                else:
+                    result += "[ERROR] {0} for target '{1}' does not "\
+                              "validate\n{2}".format(kind, target, outcome)
+            ctx.log_state(result)
+
+        if old_schema:
+            warning = """
+Topologies valid under the old schema may have older directives.
+It is suggested to update any of the following:
+    res_group_type -> resource_group_type
+    res_defs -> resource_definitions
+    res_name -> name
+    type -> role
+    res_type -> role"""
+            ctx.log_state(warning)
+        sys.exit(return_code)
+    except LinchpinError as e:
+        ctx.log_state(e)
+        sys.exit(1)
+
+
+@runcli.command()
+@click.argument('providers', metavar='PROVIDERS', required=False,
+                nargs=-1)
+@click.option('--ask-sudo-pass', is_flag=True, default=False,
+              help='Prompts for sudo password for package installations.  \
+                    Only works with --use-shell')
+@click.option('--use-venv', is_flag=True, default=False,
+              help='Set if running linchpin setup from a virtual environment')
+@click.option('--use-shell', '--us', metavar='USE_SHELL', default=False,
+              is_flag=True, help='Use subprocess for linchpin run')
+@pass_context
+def setup(ctx, providers, ask_sudo_pass, use_venv, use_shell):
+    """
+    Install the dependencies needed for the given provider(s).
+
+    providers:    Setup ONLY the providers listed. If omitted, it installs
+    the dependencies for ALL providers.
+    """
+    lpcli.ctx.set_evar("ask_sudo_pass", ask_sudo_pass)
+    lpcli.ctx.set_evar("use_venv", use_venv)
+    if use_shell:
+        ctx.set_cfg("ansible", "use_shell", use_shell)
+    lpcli.ctx.no_monitor = True
+    lpcli.ctx.set_evar('no_monitor', True)
+
+    return_code, output = lpcli.lp_setup(providers)
+    return sys.exit(return_code)
+
+
+def _get_hosts(ctx, args, incomplete):
+    lpctx = LinchpinCliContext()
+    lpctx.load_config(lpconfig=None)
+    lpctx.load_global_evars()
+    lpcli = LinchpinCli(lpctx)
+    return [k for k in lpcli.ctx.inventory.hosts.keys() if incomplete in k]
+
+
+@runcli.command('ssh', short_help='SSH to deployed system')
+@click.argument('target', type=click.STRING, autocompletion=_get_hosts)
+@pass_context
+def ssh(ctx, target):
+    try:
+        lpcli.ssh(target)
+    except LinchpinError as e:
+        ctx.log_state(e)
+        sys.exit(1)
 
 
 def main():

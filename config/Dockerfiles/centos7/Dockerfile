@@ -3,32 +3,27 @@ LABEL maintainer "https://github.com/CentOS-PaaS-SIG/linchpin"
 LABEL description "This container will verify linchpin works under Centos7"
 
 ENV HOME=/root
+ENV LC_ALL=en_US.utf8
+ENV LANG=en_US.utf8
 WORKDIR $HOME
 
 COPY centos7/centos7-pike.repo /etc/yum.repos.d/centos7-pike.repo
 RUN yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
-RUN yum -y install python-pip \
-    && pip install -U pip \
-    && pip install -U setuptools \
-    && yum -y install curl \
-    && curl -o /etc/yum.repos.d/herlo-linchpin-epel7.repo \
-    https://copr.fedorainfracloud.org/coprs/herlo/linchpin-epel7/repo/epel-7/herlo-linchpin-epel7-epel-7.repo; \
-    yum -y install gcc python-devel openssl-devel ansible \
+RUN yum -y install python3-pip
+RUN curl -o /etc/yum.repos.d/herlo-linchpin-epel7.repo \
+    https://copr.fedorainfracloud.org/coprs/herlo/linchpin-epel7/repo/epel-7/herlo-linchpin-epel7-epel-7.repo
+RUN yum -y install gcc python3-devel openssl-devel ansible \
                     libvirt-daemon-driver-* libvirt-daemon libvirt-daemon-kvm \
-                    qemu-kvm libvirt-daemon-config-network libvirt-python \
-                    libvirt-devel file openssh mkisofs libvirt-client \
-                    net-tools git python-krbV make libxslt-python krb5-workstation \
-                    PyYAML python-ipaddress python-requests; \
-    #rm -rf /usr/lib/python2.7/site-packages/{urllib3,ipaddress}*; \
-    #rm -rf /usr/lib64/python2.7/site-packages/{PyYAML,yaml}*; \
-    #pip install -U 'ipaddress>=1.0.17'; \
-    #pip install -U 'urllib3<1.24,>=1.21.1'; \
-    #pip install -U 'requests>=2.14.2'; \
-    #pip install -U 'PyYAML>=3.12'; \
-    #pip uninstall -y urllib3; \
-    #yum -y install virt-install \
-    #echo 'pip freeze | grep requests'; \
-    #pip freeze | grep requests; \
+                    qemu-kvm libvirt-daemon-config-network libvirt-python3 \
+                    libvirt-devel virt-install file openssh mkisofs \
+                    libvirt-client net-tools git python3-krbV make \
+                    libxslt-python3 python3-libselinux krb5-workstation \
+                    python3-requests jq buildah git which; \
+    pip3 install -U pip \
+    && pip3 install -U setuptools \
+    && pip3 install -U pygithub \
+    && pip3 install -U openstackclient boto>=2.49.0 \
+    && pip3 install -U curl; \
     (cd /lib/systemd/system/sysinit.target.wants/; for i in *; \
      do [ $i == systemd-tmpfiles-setup.service ] || rm -f $i; done); \
     rm -f /lib/systemd/system/multi-user.target.wants/*;\
@@ -38,6 +33,9 @@ RUN yum -y install python-pip \
     rm -f /lib/systemd/system/sockets.target.wants/*initctl*; \
     rm -f /lib/systemd/system/basic.target.wants/*;\
     rm -f /lib/systemd/system/anaconda.target.wants/*; \
+    rm -f /usr/sbin/vgs; \
+    rm -f /usr/sbin/lvs; \
+    rm -f /usr/sbin/pvs; \
     systemctl enable libvirtd; \
     systemctl enable virtlockd
 RUN sed -i "/Service/a ExecStartPost=\/bin\/chmod 666 /dev/kvm" /usr/lib/systemd/system/libvirtd.service

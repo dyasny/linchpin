@@ -7,60 +7,126 @@
  */
 
 // Openshift project
-openshiftProject = "continuous-infra"
+openshiftProject = env.OPENSHIFT_PROJECT ?: "continuous-infra"
 DOCKER_REPO_URL = env.DOCKER_REPO_URL ?: '172.30.254.79:5000'
 
 // Defaults for SCM operations
+env.ghOrg = 'CentOS-PaaS-SIG'
 env.ghprbGhRepository = env.ghprbGhRepository ?: 'CentOS-PaaS-SIG/linchpin'
 env.ghprbActualCommit = env.ghprbActualCommit ?: 'develop'
+env.ghprbSourceBranch = env.ghprbSourceBranch ?: 'develop'
+env.ghprbTargetBranch = env.ghprbTargetBranch ?: 'develop'
 
 // If this PR does not include an image change, then use this tag
-STABLE_LABEL = "stable"
+STABLE_LABEL = "stable-" + env.ghprbTargetBranch
 tagMap = [:]
 
 // Initialize
-tagMap['fedora26'] = STABLE_LABEL
-tagMap['fedora27'] = STABLE_LABEL
+tagMap['fedora30'] = STABLE_LABEL
+tagMap['fedora31'] = STABLE_LABEL
 tagMap['centos7'] = STABLE_LABEL
 
 // Provider: [ PATH/IN/REPO to match, ]
-p_providers = ['dummy':
-                ["^(?!linchpin/version.py).*",
+p_providers = ['__RELEASE__':
+                ["linchpin/version.py"],
+               'dummy':
+                [".*",
                  "^linchpin/provision/roles/dummy/.*",
                  "^linchpin/provision/dummy.yml",
+                 "^linchpin/InventoryFilters/DummyInventory.py",
+                 "^linchpin/InventoryFilters/GenericInventory.py",
+                 "^linchpin/InventoryFilters/.*InventoryFormatter.py",
+                 "^linchpin/InventoryFilters/InventoryProviders.py",
                  "^docs/source/examples/workspace/PinFile.dummy.yml",
                  "^config/Dockerfiles/tests.d/general/.*",
-                 "^config/Dockerfiles/tests.d/dummy/.*"],
+                 "^config/Dockerfiles/tests.d/dummy/.*",
+                 "linchpin/version.py"],
                'duffy':
                 ["^linchpin/provision/roles/duffy/.*",
                  "^linchpin/provision/duffy.yml",
+                 "^linchpin/InventoryFilters/DuffyInventory.py",
+                 "^linchpin/InventoryFilters/GenericInventory.py",
+                 "^linchpin/InventoryFilters/.*InventoryFormatter.py",
+                 "^linchpin/InventoryFilters/InventoryProviders.py",
                  "^docs/source/examples/workspace/PinFile.duffy.yml",
                  "^config/Dockerfiles/tests.d/general/.*",
-                 "^config/Dockerfiles/tests.d/duffy/.*"],
+                 "^config/Dockerfiles/tests.d/duffy/.*",
+                 "linchpin/version.py"],
                'libvirt':
                 ["^linchpin/provision/roles/libvirt/.*",
                  "^linchpin/provision/libvirt.yml",
+                 "^linchpin/InventoryFilters/LibvirtInventory.py",
+                 "^linchpin/InventoryFilters/GenericInventory.py",
+                 "^linchpin/InventoryFilters/.*InventoryFormatter.py",
+                 "^linchpin/InventoryFilters/InventoryProviders.py",
                  "^docs/source/examples/workspace/PinFile.libvirt.yml",
                  "^config/Dockerfiles/tests.d/(general|inventory)/.*",
-                 "^config/Dockerfiles/tests.d/libvirt/.*"],
+                 "^config/Dockerfiles/tests.d/libvirt/.*",
+                 "linchpin/version.py"],
                'aws':
                 ["^linchpin/provision/roles/aws/.*",
                  "^linchpin/provision/aws.yml",
+                 "^linchpin/InventoryFilters/AWSInventory.py",
+                 "^linchpin/InventoryFilters/GenericInventory.py",
+                 "^linchpin/InventoryFilters/.*InventoryFormatter.py",
+                 "^linchpin/InventoryFilters/InventoryProviders.py",
                  "^docs/source/examples/workspace/PinFile.aws.yml",
                  "^config/Dockerfiles/tests.d/(general|inventory)/.*",
-                 "^config/Dockerfiles/tests.d/aws/.*"],
+                 "^config/Dockerfiles/tests.d/aws/.*",
+                 "linchpin/version.py"],
+                // 'azure':
+                // ["^linchpin/provision/roles/azure/.*",
+                //  "^linchpin/provision/azure.yml",
+                //  "^linchpin/InventoryFilters/AzureInventory.py",
+                //  "^linchpin/InventoryFilters/GenericInventory.py",
+                //  "^linchpin/InventoryFilters/.*InventoryFormatter.py",
+                //  "^linchpin/InventoryFilters/InventoryProviders.py",
+                //  "^docs/source/examples/workspace/PinFile.azure.yml",
+                //  "^config/Dockerfiles/tests.d/(general|inventory)/.*",
+                //  "^config/Dockerfiles/tests.d/azure/.*",
+                //  "^linchpin/requirements-azure.txt",
+                //  "linchpin/version.py"],
+               'gcloud':
+                ["^linchpin/provision/roles/gcloud/.*",
+                 "^linchpin/provision/gcloud.yml",
+                 "^linchpin/InventoryFilters/GCloudInventory.py",
+                 "^linchpin/InventoryFilters/GenericInventory.py",
+                 "^linchpin/InventoryFilters/.*InventoryFormatter.py",
+                 "^linchpin/InventoryFilters/InventoryProviders.py",
+                 "^docs/source/examples/workspace/PinFile.gcloud.yml",
+                 "^config/Dockerfiles/tests.d/(general|inventory)/.*",
+                 "^config/Dockerfiles/tests.d/gcloud/.*",
+                 "linchpin/version.py"],
                'beaker':
                 ["^linchpin/provision/roles/beaker/.*",
                  "^linchpin/provision/beaker.yml",
-                 "^docs/source/examples/workspace/PinFile.beaker.yml",
+                 "^linchpin/provision/library/bkr.*py",
+                 "^linchpin/InventoryFilters/BeakerInventory.py",
+                 "^linchpin/InventoryFilters/GenericInventory.py",
+                 "^linchpin/InventoryFilters/.*InventoryFormatter.py",
+                 "^linchpin/InventoryFilters/InventoryProviders.py",
+                 "^docs/source/examples/workspaces/beaker/.*",
                  "^config/Dockerfiles/tests.d/general/.*",
-                 "^config/Dockerfiles/tests.d/beaker/.*"],
+                 "^config/Dockerfiles/tests.d/beaker/.*",
+                 "linchpin/version.py"],
                'openstack':
                 ["^linchpin/provision/roles/openstack/.*",
                  "^linchpin/provision/openstack.yml",
+                 "^linchpin/InventoryFilters/OpenstackInventory.py",
+                 "^linchpin/InventoryFilters/GenericInventory.py",
+                 "^linchpin/InventoryFilters/.*InventoryFormatter.py",
+                 "^linchpin/InventoryFilters/InventoryProviders.py",
                  "^docs/source/examples/workspace/PinFile.openstack.yml",
                  "^config/Dockerfiles/tests.d/general/.*",
-                 "^config/Dockerfiles/tests.d/openstack/.*"],
+                 "^config/Dockerfiles/tests.d/openstack/.*",
+                 "^config/Dockerfiles/cleanup-openstack.sh",
+                 "linchpin/version.py"],
+               'openshift':
+                ["^linchpin/provision/roles/openshift/.*",
+                 "^linchpin/provision/openshift.yml",
+                 "^docs/source/examples/workspaces/openshift/.*",
+                 "^config/Dockerfiles/tests.d/openshift/.*",
+                 "linchpin/version.py"],
               ]
 
 test_providers = ""
@@ -71,11 +137,11 @@ IRC_CHANNEL = "#contra-ci-cd"
 
 library identifier: "ci-pipeline@master",
         retriever: modernSCM([$class: 'GitSCMSource',
-                              remote: "https://github.com/CentOS-Paas-SIG/ci-pipeline"])
+                              remote: "https://github.com/${env.ghOrg}/ci-pipeline"])
 
 library identifier: "cico-pipeline-library@master",
         retriever: modernSCM([$class: 'GitSCMSource',
-                              remote: "https://github.com/CentOS/cico-pipeline-library"])
+                              remote: "https://github.com/CentOS-PaaS-SIG/cico-pipeline-library"])
 
 // Check out PR's version of library
 library identifier: "linchpin-pipeline@${env.ghprbActualCommit}",
@@ -87,13 +153,16 @@ library identifier: "linchpin-pipeline@${env.ghprbActualCommit}",
 [value: '+refs/pull/*:refs/remotes/origin/pr/*']]]]])
 
 properties([
-  buildDiscarder(logRotator(artifactNumToKeepStr: '20', numToKeepStr: '20')),
-  [$class: 'GithubProjectProperty', displayName: '', projectUrlStr: 'https://github.com/CentOS-PaaS-SIG/linchpin/'],
+  buildDiscarder(logRotator(artifactNumToKeepStr: '20', numToKeepStr: '15')),
+  [$class: 'GithubProjectProperty', displayName: '', projectUrlStr: 'https://github.com/${env.ghOrg}/linchpin/'],
   parameters(
     [
       string(defaultValue: 'develop',
              description: '',
              name: 'ghprbActualCommit'),
+      string(defaultValue: 'develop',
+             description: '',
+             name: 'ghprbTargetBranch'),
       string(defaultValue: '',
              description: '',
              name: 'sha1'),
@@ -155,29 +224,31 @@ pipeline {
                     sh """
                        oc whoami
                     """
+                    env.REPO_URL = "https://github.com/${env.ghOrg}/linchpin"
+                    env.REPO_REF = "${env.ghprbActualCommit}"
                     pipelineUtils.setupContainerTemplates(openshiftProject)
                 }
             }
         }
-        stage("fedora26 image build") {
+        stage("fedora30 image build") {
             when {
                 // Only build if we have related files in changeset
-                changeset "config/Dockerfiles/fedora26/**"
+                changeset "config/Dockerfiles/fedora30/**"
             }
             steps {
                 script {
-                    tagMap['fedora26'] = pipelineUtils.buildImage(openshiftProject, "fedora26")
+                    tagMap['fedora30'] = pipelineUtils.buildImage(openshiftProject, "fedora30")
                 }
             }
         }
-        stage("fedora27 image build") {
+        stage("fedora31 image build") {
             when {
                 // Only build if we have related files in changeset
-                changeset "config/Dockerfiles/fedora27/**"
+                changeset "config/Dockerfiles/fedora31/**"
             }
             steps {
                 script {
-                    tagMap['fedora27'] = pipelineUtils.buildImage(openshiftProject, "fedora27")
+                    tagMap['fedora31'] = pipelineUtils.buildImage(openshiftProject, "fedora31")
                 }
             }
         }
@@ -217,10 +288,10 @@ pipeline {
                                        value: "${env.ghprbPullId}"),
                                 string(name: 'ghprbGhRepository',
                                        value: "${env.ghprbGhRepository}"),
-                                string(name: 'FEDORA26_TAG',
-                                       value: tagMap['fedora26']),
-                                string(name: 'FEDORA27_TAG',
-                                       value: tagMap['fedora27']),
+                                string(name: 'FEDORA30_TAG',
+                                       value: tagMap['fedora30']),
+                                string(name: 'FEDORA31_TAG',
+                                       value: tagMap['fedora31']),
                                 string(name: 'CENTOS7_TAG',
                                        value: tagMap['centos7']),
                                 string(name: 'TEST_PROVIDERS',

@@ -85,3 +85,16 @@ Rackspace
 Rackspace is a specialized Openstack instance with commercial support. See https://www.rackspace.com/en-us/cloud for more detail about how Rackspace works.
 
 Reference: http://docs.ansible.com/ansible/latest/list_of_cloud_modules.html#rackspace
+
+VMware
+======
+
+Provision virtual machines on ESXi hosts.
+
+Reference: https://docs.ansible.com/ansible/latest/modules/vmware_guest_module.html
+
+Docker
+======
+Provisions Docker containers and resources. See http://www.docker.com/ for more detail about Docker.
+
+Reference: https://docs.ansible.com/ansible/latest/scenario_guides/guide_docker.html

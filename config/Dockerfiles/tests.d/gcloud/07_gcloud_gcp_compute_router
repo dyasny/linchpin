@@ -1,0 +1,23 @@
+#!/bin/bash -xe
+
+# Verify the gcloud compute router provisioning
+# distros.exclude: centos7 fedora29 fedora30 fedora31
+# providers.include: gcloud
+
+DISTRO=${1}
+PROVIDER=${2}
+
+TARGET="gcloud-gcp-compute-router"
+TMP_FILE=$(mktemp)
+
+function clean_up {
+    set +e
+    # sleep for a bit to avoid network timeouts
+    sleep 120
+    linchpin -w . -v destroy "${TARGET}"
+}
+trap clean_up EXIT SIGHUP SIGINT SIGTERM
+
+pushd docs/source/examples/workspaces/${PROVIDER}
+
+linchpin -w . -vvvv up "${TARGET}"

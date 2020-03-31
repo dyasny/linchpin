@@ -73,10 +73,6 @@
   register: ismt
   when: lismt.stat.mimetype == "application/x-xz"
 
-  #- name: "DEBUG: ismt"
-  #  debug:
-  #    var: ismt
-
 - name: uncompress xz local_image_src
   command: "xz -d --keep --force {{ local_image_src }}"
   become: "{{ libvirt_become }}"
@@ -89,7 +85,7 @@
     remote_src: false
   with_nested:
     - ["{{ local_image_path }}"]
-    - "{{ res_count.stdout }}"
+    - "{{ res_count }}"
     - ["{{ img_src_ext }}"]
   loop_control:
     loop_var: img_item

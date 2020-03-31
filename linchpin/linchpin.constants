@@ -15,6 +15,7 @@ rundb_schema = {"action": "",
                 "start": "",
                 "end": "",
                 "rc": 0,
+		"hooks": [],
                 "uhash": ""}
 rundb_hash = sha256
 rundb_uhash_length = 6
@@ -33,6 +34,11 @@ _check_mode = False
 _async = False
 async_timeout = 1000
 default_ssh_key_path = ~/.ssh
+debug_mode = False
+auth_debug = False
+vault_encryption = False
+vault_password = ''
+async_retries = 60
 
 
 # NOTE: if either of these change, the value in linchpin/templates must also change
@@ -50,13 +56,15 @@ playbooks_folder = provision
 default_schemas_path = {{ lp_path }}/defaults/%(schemas_folder)s
 default_topologies_path = {{ lp_path }}/defaults/%(topologies_folder)s
 default_layouts_path = {{ lp_path }}/defaults/%(layouts_folder)s
-default_inventories_path = {{ lp_path }}/defaults/%(inventories_folder)s
+default_inventories_path = {{ workspace }}/inventories/
 default_roles_path = {{ lp_path }}/%(playbooks_folder)s/%(roles_folder)s
 
 # default credentials data, this path doesn't automatically exist
-default_credentials_path = %(default_config_path)s
+default_credentials_path = {{ workspace }}/credentials
 
 default_resources_path = {{ workspace }}/%(resources_folder)s
+
+default_delimiter = _
 
 # for 1.0.x compatibility
 enable_uhash = False
@@ -68,12 +76,22 @@ generate_resources = True
 source = templates/
 pinfile = PinFile
 
+remote = git://github.com/CentOS-PaaS-SIG/linchpin
+fetch_ref = master
+root = workspaces/dummy
+fetch_type = workspace
+nocache = True
+
 [distiller]
 bkr_server = id,url,system,name
 dummy_node: hosts
 aws_ec2 = instances.id,instances.public_ip,instances.private_ip,instances.public_dns_name,instances.private_dns_name,instances.tags:name
 os_server = servers.id,servers.interface_ip,servers.name,servers.private_v4,servers.public_v4
 libvirt_node = name,ip
+
+[fetch]
+cache_ws = True
+cache_days = 1
 
 [logger]
 enable = True
@@ -100,6 +118,7 @@ inventory = .inventory
 
 [ansible]
 console = False
+use_shell = False
 
 [states]
 # in future each state may have comma separated substates
@@ -109,3 +128,9 @@ postup = postup
 postdestroy = postdestroy
 postinv = inventory
 
+[hookflags]
+no_hooks = False
+ignore_failed_hooks = False
+
+[progress_bar]
+no_progress = False

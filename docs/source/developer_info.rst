@@ -7,6 +7,6 @@ The following information may be useful for those wishing to extend LinchPin.
    :maxdepth: 1
 
    libdocs
-   writing_provider
+   developing_linchpin
 
 .. include:: includes/footer.rst

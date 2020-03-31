@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 import os
 import yaml
 import json
@@ -11,7 +12,7 @@ from linchpin.hooks.action_managers.action_manager import ActionManager
 
 class AnsibleActionManager(ActionManager):
 
-    def __init__(self, name, action_data, target_data, **kwargs):
+    def __init__(self, name, action_data, target_data, state, **kwargs):
 
         """
         AnsibleActionManager constructor
@@ -33,6 +34,8 @@ class AnsibleActionManager(ActionManager):
         self.action_data = action_data
         self.target_data = target_data
         self.context = kwargs.get("context", True)
+        self.use_shell = kwargs.get("use_shell", False)
+        self.state = state
         self.kwargs = kwargs
 
 
@@ -54,6 +57,14 @@ class AnsibleActionManager(ActionManager):
             'type': {'type': 'string', 'allowed': ['ansible']},
             'path': {'type': 'string', 'required': False},
             'context': {'type': 'boolean', 'required': False},
+            'vault_password_file': {'type': 'string', 'required': False},
+            'src': {
+                'type': 'dict',
+                'schema': {
+                    'type': {'type': 'string', 'required': True},
+                    'url': {'type': 'string', 'required': True}
+                }
+            },
             'actions': {
                 'type': 'list',
                 'schema': {
@@ -95,20 +106,21 @@ class AnsibleActionManager(ActionManager):
         ctx_params["layout_file"] = self.target_data.get("layout_file", None)
         ctx_params["inventory_file"] = (
             self.target_data.get("inventory_file", None))
+        ctx_params['no_monitor'] = self.target_data.get("no_monitor", False)
 
         return ctx_params
 
 
-    def execute(self):
+    def execute(self, results):
 
         """
         Executes the action_block in the PinFile
         """
-
         self.load()
         extra_vars = {}
 
         for action in self.action_data["actions"]:
+            result = {}
             path = self.action_data["path"]
             playbook = action.get("playbook")
 
@@ -126,17 +138,43 @@ class AnsibleActionManager(ActionManager):
                     extra_vars = json.loads(extra_vars)
 
             e_vars = action.get("extra_vars", {})
+            vault_pass_file = self.action_data.get("vault_password_file", None)
             extra_vars.update(e_vars)
+            extra_vars['hook_data'] = results
+            # some applications need no_monitor disabled for ansible hooks
+            if 'no_monitor' in self.target_data:
+                extra_vars['no_monitor'] = self.target_data.get('no_monitor')
+            verbosity = self.kwargs.get('verbosity', 1)
 
             if self.context:
                 extra_vars.update(self.get_ctx_params())
             if 'inventory_file' in self.target_data and self.context:
                 inv_file = self.target_data["inventory_file"]
-                verbosity = self.kwargs.get('verbosity', 1)
-                return ansible_runner(playbook,
-                                      "",
-                                      extra_vars,
-                                      inventory_src=inv_file,
-                                      verbosity=verbosity)
+                runner = ansible_runner(playbook,
+                                        "",
+                                        extra_vars,
+                                        vault_password_file=vault_pass_file,
+                                        inventory_src=inv_file,
+                                        verbosity=verbosity,
+                                        use_shell=self.use_shell
+                                        )
+
+                result['state'] = str(self.state)
+                result['return_code'] = runner[0]
+                result['data'] = runner[1]
             else:
-                return ansible_runner(playbook, "", extra_vars)
+                # runner : the data from the ansible runner, which will be
+                # associated with that state
+                runner = ansible_runner(playbook,
+                                        "",
+                                        extra_vars,
+                                        vault_password_file=vault_pass_file,
+                                        inventory_src="localhost",
+                                        verbosity=verbosity,
+                                        use_shell=self.use_shell
+                                        )
+                result['state'] = str(self.state)
+                result['return_code'] = runner[0]
+                result['data'] = runner[1]
+            results.append(result)
+        return results

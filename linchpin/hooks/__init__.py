@@ -45,12 +45,20 @@
 #               extra_vars: { 'testvar': 'world'}
 #
 # """
-
+from __future__ import absolute_import
+import os
 import ast
 import sys
+import git
+from git.exc import GitCommandError
+import glob
+import shutil
 
 from linchpin.hooks.action_managers import ACTION_MANAGERS
+from linchpin.hooks.built_ins import GLOBAL_HOOKS
 from linchpin.exceptions import ActionManagerError
+from linchpin.exceptions import HookError
+
 
 
 class ActionBlockRouter(object):
@@ -94,6 +102,8 @@ class LinchpinHooks(object):
         self.api.bind_to_hook_state(self.run_hooks)
         self._rundb = None
         self._rundb_id = None
+        self._prev_rundb_id = None
+        self.use_shell = self.api.get_cfg("ansible", "use_shell")
         self.verbosity = self.api.ctx.verbosity
 
 
@@ -106,6 +116,10 @@ class LinchpinHooks(object):
     def rundb(self, data):
         self._rundb = data[0]
         self._rundb_id = data[1]
+        # Only set this if we are running destroy hooks
+        # _prev_rundb_id is the id of the corresponding "up"
+        if len(data) == 3:
+            self._prev_rundb_id = data[2]
 
 
     def prepare_ctx_params(self):
@@ -114,7 +128,7 @@ class LinchpinHooks(object):
         that is being set. these parameters are based topology name.
         """
 
-        topo_data = self.api.get_evar('topo_data')
+        topo_data = self.api.get_evar('topo_data', {})
 
         workspace = self.api.get_evar('workspace')
         inv_folder = self.api.get_evar('inventories_folder')
@@ -122,6 +136,8 @@ class LinchpinHooks(object):
         uhash = self.api.get_evar('uhash')
         uhash_enabled = self.api.get_evar('enable_uhash', False)
         ext = self.api.get_cfg('extensions', 'inventory')
+        # some applications need no_monitor disabled for ansible hooks
+        no_monitor = self.api.get_evar('no_monitor')
 
         inv_file = '{0}/{1}/{2}{3}'.format(workspace,
                                            inv_folder,
@@ -137,6 +153,7 @@ class LinchpinHooks(object):
         self.api.target_data['extra_vars'] = {}
         self.api.target_data['extra_vars']['inventory_dir'] = inv_folder
         self.api.target_data['extra_vars']['inventory_file'] = inv_file
+        self.api.target_data['extra_vars']['no_monitor'] = no_monitor
 
 
     def prepare_inv_params(self):
@@ -176,14 +193,13 @@ class LinchpinHooks(object):
         :param is_global: whether the hook is global (can be applied to
         multiple targets)
         """
-
         hooks_data = self.api.get_evar('hooks_data', None)
 
         self.prepare_ctx_params()
 
         # this will replace the above target_data and pull from the rundb
         # run_data = self.prepare_inv_params()
-        if str(state) is 'postinv':
+        if str(state) == 'postinv':
             run_data = self.prepare_inv_params()
             return self.run_inventory_gen(run_data)
 
@@ -203,7 +219,7 @@ class LinchpinHooks(object):
 
             # current target data extravars are fetched
             tgt_data = self.api.target_data.get('extra_vars', None)
-            self.run_actions(state_data, tgt_data)
+            self.run_actions(state, state_data, tgt_data)
 
 
     def run_inventory_gen(self, data):
@@ -215,7 +231,7 @@ class LinchpinHooks(object):
         pass
 
 
-    def run_actions(self, action_blocks, tgt_data, is_global=False):
+    def run_actions(self, state, action_blocks, tgt_data, is_global=False):
         """
         Runs actions inside each action block of each target
 
@@ -232,76 +248,210 @@ class LinchpinHooks(object):
             - echo ' this is 'postup' operation Hello hai how r u ?'
         """
 
+
         if is_global:
             raise NotImplementedError('Run Hooks is not implemented \
                                        for global scoped hooks')
         else:
-            # a_b -> abbr for action_block
-            for a_b in action_blocks:
-                action_type = a_b['type']
-                ab_ctx = a_b['context'] if 'context' in a_b else False
-                if 'path' not in a_b:
-                    # if the path is not defined it defaults to
-                    # workspace/hooks/typeofhook/name
-                    a_b['path'] = '{0}/{1}/{2}/{3}/'.format(
-                        self.api.ctx.workspace,
-                        self.api.get_evar('hooks_folder',
-                                          default='hooks'),
-                        a_b['type'],
-                        a_b['name'])
-
-                if 'action_manager' in a_b:
-                    # fetches the action object from the path
-                    # add path to python path
-                    sys.path.append(a_b['path'])
-                    # get the module path
-                    module_path = '{0}/{1}'.format(a_b['path'],
-                                                   a_b['action_manager'])
-                    # get module src
-                    module_src = open(module_path, 'r').read()
-                    # strip .py ext from module path
-                    module_path = module_path.strip('.py')
-                    # strip .py ext from action_manager
-                    a_b['action_manager'] = a_b['action_manager'].strip('.py')
-                    # parse the module
-                    module_src = ast.parse(module_src)
-                    # get all classes inside the class
-                    classes = ([node.name
-                               for node in ast.walk(module_src)
-                               if isinstance(node, ast.ClassDef)])
-
-                    # choose the first name as the class name
-                    class_name = classes[0]
-                    # import the module with class name, it should work
-                    module = __import__(a_b['action_manager'])
-                    # get the class
-                    class_ = getattr(module, class_name)
-                    # a_b_obj is action_block_object
-                    a_b_obj = class_(action_type,
-                                     a_b,
-                                     tgt_data,
-                                     context=ab_ctx,
-                                     verbosity=self.verbosity)
-                else:
-                    a_b_obj = ActionBlockRouter(action_type,
-                                                a_b,
-                                                tgt_data,
-                                                context=ab_ctx,
-                                                verbosity=self.verbosity)
-                try:
-                    self.api.ctx.log_state('-------\n'
-                                           'start hook'
-                                           ' {0}:{1}'.format(a_b['type'],
-                                                             a_b['name']))
+            self.run_local_actions(state, action_blocks, tgt_data)
 
 
-                    # validates the class object
-                    a_b_obj.validate()
-                    # executes the hook
-                    a_b_obj.execute()
+    def run_local_actions(self, state, action_blocks, tgt_data):
+        # a_b -> abbr for action_block
+        for a_b in action_blocks:
+            self.run_action(state, a_b, tgt_data)
 
-                    # intentionally using print here
-                    self.api.ctx.log_state('end hook {0}:{1}\n-------'.format(
-                                           a_b['type'], a_b['name']))
-                except Exception as e:
-                    self.api.ctx.log_info(str(e))
+
+    def run_action(self, state, block, tgt_data):
+        use_shell = ast.literal_eval(self.api.get_cfg("ansible", "use_shell"))
+        if block['name'] in GLOBAL_HOOKS.keys():
+            block = self.global_hooks_block(block)
+        # currently built-ins support only ansible
+        action_type = block.get('type', 'ansible')
+        ab_ctx = block['context'] if 'context' in block else False
+        if 'path' not in block:
+            self.resolve_block_path(block)
+
+        if 'action_manager' in block:
+            class_ = self.get_custom_action_manager_class(block)
+            block_obj = class_(action_type,
+                               block,
+                               tgt_data,
+                               context=ab_ctx,
+                               state=state,
+                               verbosity=self.verbosity,
+                               use_shell=use_shell)
+        else:
+            block_obj = ActionBlockRouter(action_type,
+                                          block,
+                                          tgt_data,
+                                          context=ab_ctx,
+                                          state=state,
+                                          verbosity=self.verbosity,
+                                          use_shell=use_shell)
+        try:
+            self.api.ctx.log_state('-------\n'
+                                   'start hook'
+                                   ' {0}:{1}'.format(block['type'],
+                                                     block['name']))
+
+
+            # validates the class object
+            block_obj.validate()
+
+            if 'src' in block.keys():
+                self.fetch_src(block)
+
+            target = self.api.get_evar('target', default=None)
+            hook_result = self.execute_hook(block_obj, target)
+            # write results to rundb
+            self._rundb.update_record(target,
+                                      self._rundb_id,
+                                      'hooks',
+                                      hook_result)
+            for result in hook_result:
+                if result['return_code'] > 0:
+                    raise HookError("Hook execution failed")
+
+            # intentionally using print here
+            self.api.ctx.log_state('end hook {0}:{1}\n-------'.format(
+                                   block['type'], block['name']))
+
+        except Exception as e:
+            dflt = self.api.get_cfg("hook_flags",
+                                    "ignore_failed_hooks")
+            if not dflt:
+                raise HookError("Error executing hook: '{0}'".format(e))
+            self.api.ctx.log_info(str(e))
+
+    def get_custom_action_manager(self, action_block):
+        # fetches the action object from the path
+        # add path to python path
+        sys.path.append(action_block['path'])
+        # get the module path
+        module_path = '{0}{1}'.format(action_block['path'],
+                                      action_block['action_manager'])
+        if os.path.exists(action_block['action_manager']):
+            module_path = action_block['action_manager']
+        # get module src
+        module_src = open(module_path, 'r').read()
+        # strip .py ext from module path
+        module_path = module_path.strip('.py')
+        # strip .py ext from action_manager
+        action_block['action_manager'] = action_block['action_manager'] \
+            .strip('.py')
+        # parse the module
+        module_src = ast.parse(module_src)
+        # get all classes inside the class
+        classes = ([node.name
+                    for node in ast.walk(module_src)
+                    if isinstance(node, ast.ClassDef)])
+
+        # choose the first name as the class name
+        class_name = classes[0]
+        # import the module with class name, it should work
+        module = __import__(action_block['action_manager'])
+        # get the class and return it
+        return getattr(module, class_name)
+        # action_block_obj is action_block_object
+
+
+    def execute_hook(self, block_obj, target):
+        # produce a partial application of update_record to limit
+        # data passed to action managers
+        # get past results from rundb
+        action = 'hooks'
+        record = self._rundb.get_record(target,
+                                        action,
+                                        self._rundb_id)
+
+        # if this is set, then we're running a destroy hook of some kind
+        if self._prev_rundb_id:
+            prev_record = self._rundb.get_record(target,
+                                                 action,
+                                                 self._prev_rundb_id)
+            # prepend the data from the `linchpin up` phase so
+            # that the hooks are read in their run order
+            record = prev_record + record
+        # executes the hook
+        hook_record = dict(record[0])['hooks']
+        return block_obj.execute(hook_record)
+
+
+    def fetch_src(self, block):
+        # fetch the src
+        src_type = block['src']['type']
+        # we can add other source types later
+        # e.g. 'ftp', 'svn', or 'local' for hooks that exist ib
+        # a different location on the local machine
+        if src_type == 'git':
+            self.fetch_git_src(block)
+        else:
+            raise HookError("Invalid type for src")
+
+    def fetch_git_src(self, block):
+        git_remote = block['src']['url']
+        # clone repository
+        cwd = os.getcwd()
+        try:
+            git.Git(cwd).clone(git_remote)
+        except GitCommandError as e:
+            err_str = "already exists and is not an" + \
+                " empty directory"
+            if err_str not in e.stderr:
+                raise
+            pass
+        # move files to relevant section of hooks dir
+        dest_dir = "{0}/hooks/{1}/{2}".format(cwd,
+                                              block['type'],
+                                              block['name'])
+        try:
+            os.makedirs(dest_dir)
+        except OSError as e:
+            print(e)
+        repo_name = git_remote.rsplit('/', 1)[-1]
+        for filename in glob.glob(os.path.join(cwd,
+                                               repo_name,
+                                               block['type'],
+                                               block['name'],
+                                               '*.*')):
+            if os.path.isdir(filename):
+                shutil.copytree(filename, dest_dir)
+            else:
+                shutil.copy(filename, dest_dir)
+        # remove old directory
+        shutil.rmtree(os.path.join(cwd, repo_name))
+
+    def resolve_block_path(self, block):
+        # modify block['path']
+        # dicts in python are mutable so it doesn't need to
+        # be passed back
+
+        # search in global_hooks first if found resolve to
+        # global_hooks_path
+        if block['name'] in GLOBAL_HOOKS.keys():
+            # cp ~ current_file_path
+            cfp = os.path.realpath(__file__).split("/")[0:-1]
+            cfp = "/".join(cfp)
+            block["path"] = '{0}/built_ins/{1}/'.format(
+                cfp, block["name"])
+        # if the path is not defined it defaults to
+        # workspace/hooks/typeofhook/name
+        else:
+            block['path'] = '{0}/{1}/{2}/{3}/'.format(
+                self.api.ctx.workspace,
+                self.api.get_evar('hooks_folder',
+                                  default='hooks'),
+                block.get('type', 'ansible'),
+                block['name'])
+
+    def global_hooks_block(self, block):
+        t_block = GLOBAL_HOOKS.get(block['name'])
+        # update the extra_vars dict
+        # fetch vars from linchpin.conf
+        # and update them as context vars
+        t_block["actions"][0]["extra_vars"].update(
+            self.api.get_evar())
+        t_block["actions"][0]["extra_vars"].update(
+            block.get("extra_vars", {}))
+        return t_block

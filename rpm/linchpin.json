@@ -1,0 +1,57 @@
+{
+    "extensions": {
+        "enabled": [
+            "python_venv",
+            "blocks",
+            "file_permissions",
+            "file_extras"
+        ]
+    },
+    "core": {
+        "group": "Application/System",
+        "license": "GPLv3+",
+        "name": "linchpin",
+        "summary": "Ansible based multicloud orchestrator",
+        "release": "1",
+        "url": "https://linchpin.readthedocs.io",
+        "requires": [
+          "python3-lxml",
+          "git",
+          "python3",
+          "krb5-workstation"
+        ]
+    },
+    "python_venv": {
+        "name": "linchpin",
+        "path": "/opt",
+        "python": "python3",
+        "strip_binaries": false,
+        "requirements": [
+          "requirements.txt",
+          "/dev/null 'ansible'",
+          "/dev/null 'beaker-client>=27.0' 'bottle'"
+        ]
+
+    },
+    "file_permissions": {
+      "user": "root",
+      "group": "root"
+    },
+    "file_extras": {
+        "files": [
+          {
+            "src": "linchpin.sh",
+            "dest": "usr/bin/linchpin"
+          }
+        ]
+    },
+    "blocks": {
+        "desc": [
+            "linchpin is an Ansible-based tool to stand up and tear down",
+            "resources in various cloud environments"
+        ],
+        "post": [
+          "ln -s /opt/linchpin/bin/linchpin /usr/bin/linchpin"
+        ]
+    }
+}

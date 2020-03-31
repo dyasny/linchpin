@@ -10,10 +10,6 @@ rm -f ${base_dir}/${distro}_logs/*
 TESTS_DIR="./config/Dockerfiles/tests.d"
 
 
-if [ -z "${PROVIDERS}" ]; then
-    PROVIDERS="dummy libvirt"
-fi
-
 # this function checks the distros.exclude value within the test.
 # If none, false is returned and the disro hasn't been excluded.
 # If distros.exclude includes a distro name, it is chedked against
@@ -62,11 +58,11 @@ function set_providers () {
     prov_exc=''
     if [ -z "${prov_inc}" ]; then
         providers=${PROVIDERS}
-        prov_exc=$(grep '^#.*providers.exclude' ${test} | grep -v 'none' | awk -F':' '{ print $2 }')
+	prov_exc=$(grep '^#.*providers.exclude' ${test} | grep -v 'none' | awk -F':' '{ print $2 }'; echo "__RELEASE__")
         if [ ! -z "${prov_exc}" ]; then
-            for p in ${prov_exc}; do
-                p="${p##+([[:space:]])}"
-                providers="${providers//${p}/}"
+             for p in ${prov_exc}; do
+                 p="${p##+([[:space:]])}"
+                 providers="${providers//${p}/}"
             done
         fi
     fi
@@ -83,6 +79,7 @@ result=0
 
 export CREDS_PATH="$base_dir/keys"
 pushd "${CREDS_PATH}"
+
 for provider in ${PROVIDERS}; do
     # If CREDS_PATH provides a tarball extract it and
     # run it's install script
@@ -112,7 +109,7 @@ for testdir in *; do
                     echo >> ${base_dir}/${distro}_logs/${provider}.log
                     echo "==== TEST: ${testname} ====" | tee -a ${base_dir}/${distro}_logs/${provider}.log
                     pushd "${base_dir}" &> /dev/null
-                    ${TESTS_DIR}/${testdir}/${test} ${distro} ${provider} 2>&1 | tee -a ${base_dir}/${distro}_logs/${provider}.log
+                    ${TESTS_DIR}/${testdir}/${test} ${distro} ${provider} ${CREDS_PATH} 2>&1 | tee -a ${base_dir}/${distro}_logs/${provider}.log
                     RC=${?}
                     if [ ${RC} -eq 0 ]; then
                         test_summary="$(tput setaf 2)SUCCESS$(tput sgr0)\t${testname}"

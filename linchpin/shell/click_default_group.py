@@ -65,6 +65,7 @@
 #
 # """
 
+from __future__ import absolute_import
 import warnings
 import click
 
@@ -114,7 +115,7 @@ class DefaultGroup(click.Group):
         not be listed
         """
 
-        return ['init', 'up', 'destroy', 'fetch', 'journal']
+        return ['init', 'up', 'destroy', 'fetch', 'journal', 'setup', 'ssh']
 
     def get_command(self, ctx, cmd_name):
 

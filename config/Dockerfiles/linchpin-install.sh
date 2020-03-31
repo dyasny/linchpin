@@ -2,15 +2,13 @@
 
 WORKDIR=$(pwd)
 
-pushd config/Dockerfiles
-make pip_install.sh
-./pip_install.sh
-popd
-
-pip install .
+pip install . --ignore-installed
 pip install .[tests]
 pip install .[libvirt]
-pip install .[beaker]
+#pip install .[beaker]
+#pip install .[docker]
+pip install .[azure]
+pip install .[openshift]
 
 # If duffy.key is available then install duffy ansible module.
 if [ -e "keys/duffy.key" ]; then
@@ -19,7 +17,7 @@ if [ -e "keys/duffy.key" ]; then
 
     # Link duffy module linchpin library
     pushd ~
-    linchpin_path=$(python -c 'import os, linchpin; print os.path.dirname(linchpin.__file__)')
+    linchpin_path=$(python3 -c 'import os, linchpin; print(os.path.dirname(linchpin.__file__))')
     popd
     if [ -n "$linchpin_path" ]; then
         pushd $linchpin_path/provision/library

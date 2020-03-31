@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 import sys
 
@@ -13,6 +15,12 @@ from linchpin.context import LinchpinContext
 from linchpin.rundb import RunDB
 
 from linchpin.tests.mockdata.contextdata import ContextData
+import six
+
+import json
+import linchpin
+from linchpin.api import Pinfile
+from linchpin.api import Workspace
 
 
 def test_api_create():
@@ -90,6 +98,22 @@ def setup_lp_api():
     with open(topo_path, 'r') as topo_stream:
         topology_data = parser.parse_json_yaml(topo_stream)
         provision_data = {provider: {'topology': topology_data}}
+
+
+def setup_api():
+    """
+    performs initialization required for linchpin api
+    """
+
+    global wksp
+    global pfile
+    base_path = '{0}'.format(os.path.dirname(os.path.realpath(__file__)))\
+        .rstrip('/')
+    wksp = Workspace(path=base_path+"/mockdata/api_workspace")
+    pinfile = open(base_path+"/mockdata/api_workspace/PinFile","r").read()
+    pinfile = json.loads(pinfile)
+    pfile = Pinfile(pinfile=pinfile)
+
 
 
 @with_setup(setup_lp_api)
@@ -179,28 +203,6 @@ def test_bind_to_hook_state():
 
 
 @with_setup(setup_lp_api)
-def test_find_playbook_path():
-
-    pb_path = lpa._find_playbook_path(provider)
-
-    assert os.path.exists(os.path.expanduser(pb_path))
-
-
-@with_setup(setup_lp_api)
-def test_validate_topology():
-
-    success = False
-    topo = provision_data.get(provider).get('topology')
-    try:
-        resources = lpa._validate_topology(topo)
-        success = len(resources)
-    except Exception:
-        pass
-
-    assert success
-
-
-@with_setup(setup_lp_api)
 def test_do_action():
 
     return_code, results = lpa.do_action(provision_data)
@@ -208,7 +210,7 @@ def test_do_action():
     failed = False
     if return_code:
         failed = True
-        for target, data in results.iteritems():
+        for target, data in six.iteritems(results):
             task_results = data['task_results'][0]
 
             if not isinstance(task_results, int):
@@ -218,16 +220,29 @@ def test_do_action():
                     tr = trs[0]
                     if tr.is_failed():
                         msg = tr._check_key('msg')
-                        print("Target '{0}': {1} failed with"
+                        print(("Target '{0}': {1} failed with"
                               " error '{2}'".format(target,
                                                     tr._task,
-                                                    msg))
+                                                    msg)))
             else:
                 if task_results:
                     return_code = task_results
 
     assert not failed
 
+@with_setup(setup_lp_api)
+def test_do_validation():
+    return_code, results = lpa.do_validation(provision_data)
+
+    failed = False
+    if return_code:
+        failed = True
+        for target, data in six.iteritems(results):
+            if not data.startswith("valid"):
+                print(("Validation for target '{0}': has failed with"
+                      " error '{1}'".format(target, data)))
+
+    assert not failed
 
 @with_setup(setup_lp_api)
 def test_lp_journal():
@@ -249,6 +264,14 @@ def test_invoke_playbooks():
     lpa.set_evar('target', provider)
     lpa.set_evar('resources', resources)
     lpa.set_evar('uhash', 'test')
+    lpa.set_evar('use_uhash', True)
+    lpa.set_evar('rundb_schema', {'action': '',
+                                  'inputs': [],
+                                  'outputs': [],
+                                  'start': '',
+                                  'end': '',
+                                  'rc': 0,
+                                  'uhash': ''})
 
     return_code, results = lpa._invoke_playbooks(resources,
                                                  action='up',
@@ -256,6 +279,155 @@ def test_invoke_playbooks():
 
     assert return_code == 0
 
+"""
+
+class Workspace:
+
+    def set_workspace(self, path):
+
+        self.workspace_path = path
+        self.context.set_cfg('lp', 'workspace', self.workspace_path )
+        self.context.set_evar('workspace', self.workspace_path)
+        return self.workspace_path
+
+    def set_evar(self, key, value):
+
+        self.context.set_evar(key, value)
+        return key,value
+
+    def set_credentials_path(self, creds_path):
+        if os.path.isdir(creds_path):
+            return self.context.set_evar("default_credentials_path",
+                                         creds_path)
+        raise LinchpinError("Incorrect file path, path should be a directory")
+
+    def set_vault_encryption(self, vault_enc):
+        if isinstance(vault_enc, bool):
+            return self.context.set_evar("vault_password",vault_pass)
+        raise LinchpinError("Incorrect datatype please use boolean")
+
+    def set_no_hooks(self, flag):
+        if isinstance(flag, bool):
+            return self.ctx.set_cfg("hookflags", "no_hooks", flag)
+        raise LinchpinError("Incorrect datatype please use boolean")
+
+    def set_ignore_failed_hooks(self, flag):
+        if isinstance(flag, bool):
+            return self.ctx.set_cfg("hookflags", "ignore_failed_hooks", flag)
+        raise LinchpinError("Incorrect datatype please use boolean")
+
+    def set_vault_pass(self, vault_pass):
+        return self.context.set_evar("vault_password",vault_pass)
+
+"""
+@with_setup(setup_api)
+def test_api_workspace():
+    assert_equal(isinstance(wksp, Workspace), True)
+
+@with_setup(setup_api)
+def test_api_pinfile():
+    assert_equal(isinstance(pfile, Pinfile), True)
+
+@with_setup(setup_api)
+def test_api_wksp_load_data():
+    pindict = wksp.load_data(wksp.find_pinfile())
+    expected = json.loads(open(wksp.find_pinfile(), "r").read())
+    assert_equal(expected, pindict)
+
+@with_setup(setup_api)
+def test_api_wksp_validate():
+    out = wksp.validate()
+    expected = (0, {'dummy-test': {'layout': 'valid', 'topology': 'valid'}})
+    assert_equal(expected, out)
+    pass
+
+@with_setup(setup_api)
+def test_api_wksp_find_pinfile():
+    assert_equal(os.path.isfile(wksp.find_pinfile()), True)
+    pass
+
+@with_setup(setup_api)
+def test_api_wksp_set_workspace():
+    out = wksp.set_workspace("/tmp/")
+    assert_equal( out, "/tmp/")
+
+@with_setup(setup_api)
+def test_api_wksp_set_evar():
+    wksp.set_evar("test", "var")
+    assert_equal(wksp.get_evar("test"), "var")
+
+@with_setup(setup_api)
+def test_api_wksp_set_credentials_path():
+    wksp.set_credentials_path("/tmp/")
+    assert_equal(wksp.get_credentials_path(), "/tmp/")
+
+@with_setup(setup_api)
+def test_api_wksp_set_vault_encryption():
+    wksp.set_vault_encryption(True)
+    assert_equal(wksp.get_vault_encryption(), True)
+
+@with_setup(setup_api)
+def test_api_wksp_set_flag_no_hooks():
+    wksp.set_flag_no_hooks(True)
+    assert_equal(wksp.get_flag_no_hooks(), True)
+
+@with_setup(setup_api)
+def test_api_wksp_set_flag_ignore_failed_hooks():
+    wksp.set_flag_ignore_failed_hooks(True)
+    assert_equal(wksp.get_flag_ignore_failed_hooks(), True)
+
+@with_setup(setup_api)
+def test_api_wksp_set_vault_pass():
+    wksp.set_vault_pass("hello")
+    assert_equal(wksp.get_vault_pass(), "hello")
+
+@with_setup(setup_api)
+def test_api_wksp_get_inventory():
+    wksp.up()
+    inven = wksp.get_inventory()
+    assert_equal.__self__.maxDiff = None
+    expected = {u'dummy-test': '{"test": {"hosts": ["web-0"]}, "all": {"hosts": ["web-0", "web-1", "web-2", "test"], "vars": {"ansible_user": "root"}}, "example": {"hosts": ["web-1", "web-2", "test"]}, "_meta": {"hostvars": {"test": "test", "web-0": "web-0", "web-1": "web-1", "web-2": "web-2"}}}'}
+    expected = json.loads(expected['dummy-test']).get("all").get("hosts")
+    inven = json.loads(inven['dummy-test']).get("all").get("hosts")
+    assert_equal(inven, expected)
+
+@with_setup(setup_api)
+def test_api_pinfile_get_inventory():
+    pfile.up()
+    inven = pfile.get_inventory()
+    assert_equal.__self__.maxDiff = None
+    expected = {u'dummy-test': '{"test": {"hosts": ["web-0"]}, "all": {"hosts": ["web-0", "web-1", "web-2", "test"], "vars": {"ansible_user": "root"}}, "example": {"hosts": ["web-1", "web-2", "test"]}, "_meta": {"hostvars": {"test": "test", "web-0": "web-0", "web-1": "web-1", "web-2": "web-2"}}}'}
+    expected = json.loads(expected['dummy-test']).get("all").get("hosts")
+    inven = json.loads(inven['dummy-test']).get("all").get("hosts")
+    assert_equal(inven, expected)
+
+@with_setup(setup_api)
+def test_api_pinfile_validate():
+    out = pfile.validate()
+    expected = (0, {'dummy-test': {'layout': 'valid', 'topology': 'valid'}})
+    assert_equal(expected, out)
+
+@with_setup(setup_api)
+def test_api_wksp_up():
+    out = wksp.up()
+    assert_equal(len(out), 2)
+
+@with_setup(setup_api)
+def test_api_wksp_destroy():
+    out = wksp.destroy()
+    assert_equal(len(out), 2)
+
+@with_setup(setup_api)
+def test_api_pinfile_up():
+    out = pfile.up()
+    assert_equal(len(out), 2)
+    pass
+
+@with_setup(setup_api)
+def test_api_pinfile_destroy():
+    out = pfile.destroy()
+    assert_equal(len(out), 2)
+    pass
 
 def main():
     pass

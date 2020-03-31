@@ -2,9 +2,15 @@
 
 # flake8: noqa
 
+from __future__ import absolute_import
 import os
 
 from nose.tools import *
+try:
+    # Renamed in Python 3
+    from nose.tools import assert_regexp_matches as assertRegex
+except ImportError:
+    pass
 
 import logging
 from unittest import TestCase
@@ -12,7 +18,7 @@ from unittest import TestCase
 try:
     import configparser as ConfigParser
 except ImportError:
-    import ConfigParser as ConfigParser
+    import six.moves.configparser as ConfigParser
 
 from linchpin.cli.context import LinchpinCliContext
 from linchpin.tests.mockdata.contextdata import ContextData
@@ -90,7 +96,7 @@ def test_load_global_evars():
     lpc.load_global_evars()
 
     # remove workspace key as it's not from the config file
-    for k in lpc.evars.keys():
+    for k in list(lpc.evars):
         if k == 'workspace':
             if lpc.evars.get(k):
                 lpc.evars.pop(k)
@@ -156,7 +162,7 @@ def test_log_msg():
     with open(logfile) as f:
         line = f.readline()
 
-    assert_regexp_matches(line, regex)
+    assertRegex(line, regex)
 
 @with_setup(setup_context_data)
 def test_log_state():
@@ -176,7 +182,7 @@ def test_log_state():
     with open(logfile) as f:
         line = f.readline()
 
-    assert_regexp_matches(line, regex)
+    assertRegex(line, regex)
 
 @with_setup(setup_context_data)
 def test_log_info():
@@ -196,7 +202,7 @@ def test_log_info():
     with open(logfile) as f:
         line = f.readline()
 
-    assert_regexp_matches(line, regex)
+    assertRegex(line, regex)
 
 @with_setup(setup_context_data)
 def test_log_debug():
@@ -216,7 +222,7 @@ def test_log_debug():
     with open(logfile) as f:
         line = f.readline()
 
-    assert_regexp_matches(line, regex)
+    assertRegex(line, regex)
 
 
 def main():

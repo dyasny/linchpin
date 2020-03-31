@@ -1,6 +1,11 @@
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 import subprocess
-from action_manager import ActionManager
+import json
+import tempfile
+import shutil
+from .action_manager import ActionManager
 from cerberus import Validator
 
 from linchpin.exceptions import HookError
@@ -8,7 +13,7 @@ from linchpin.exceptions import HookError
 
 class SubprocessActionManager(ActionManager):
 
-    def __init__(self, name, action_data, target_data, **kwargs):
+    def __init__(self, name, action_data, target_data, state, **kwargs):
 
         """
         SubprocessActionManager constructor
@@ -29,6 +34,7 @@ class SubprocessActionManager(ActionManager):
         self.action_data = action_data
         self.target_data = target_data
         self.context = kwargs.get('context', True)
+        self.state = state
         self.kwargs = kwargs
 
 
@@ -53,6 +59,14 @@ class SubprocessActionManager(ActionManager):
             },
             'path': {'type': 'string', 'required': False},
             'context': {'type': 'boolean', 'required': False},
+            'vault_password_file': {'type': 'string', 'required': False},
+            'src': {
+                'type': 'dict',
+                'schema': {
+                    'type': {'type': 'string', 'required': True},
+                    'url': {'type': 'string', 'required': True}
+                }
+            },
             'actions': {
                 'type': 'list',
                 'schema': {'type': 'string'},
@@ -80,7 +94,7 @@ class SubprocessActionManager(ActionManager):
             os.environ["PATH"] += ":{0}".format(self.action_data["path"])
 
 
-    def add_context_params(self, action):
+    def add_context_params(self, action, results, data_path, context=True):
 
         """
         Adds ctx params to the action_block run when context is true
@@ -89,24 +103,56 @@ class SubprocessActionManager(ActionManager):
         """
 
         command = action
-        for key in self.target_data:
-            command += " {0}={1} ".format(key, self.target_data[key])
-        return command
+
+        if self.context:
+            data = ""
+            for key in self.target_data:
+                data += "{0}={1}; ".format(key, self.target_data[key])
+            command = data + command
+        return "{0} -- '{1}' {2}".format(command, results, data_path)
 
 
-    def execute(self):
+    def execute(self, results):
 
         """
         Executes the action_block in the PinFile
         """
 
         self.load()
+        tmpdir = tempfile.mkdtemp()
         for action in self.action_data["actions"]:
-            if self.context:
-                command = self.add_context_params(action)
-            else:
-                command = action
-            proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
+            result = {}
+
+            data_path = os.path.join(tmpdir, action)
+            res_str = json.dumps(results, separators=(',', ':'))
+            command = self.add_context_params(action,
+                                              res_str,
+                                              data_path,
+                                              self.context)
+            proc = subprocess.Popen(command,
+                                    shell=True,
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE)
             proc.wait()
+
             for line in proc.stdout:
                 print(line)
+
+            try:
+                data_file = open(data_path, 'r')
+                data = data_file.read()
+                if data:
+                    result['data'] = json.loads(data)
+            except IOError:
+                # if an IOError is thrown, the file does not exist
+                continue
+            except ValueError:
+                print("Warning: '{0}' is not a valid JSON object.  "
+                      "Data from this hook will be discarded".format(data))
+            result['return_code'] = proc.returncode
+            result['state'] = str(self.state)
+            results.append(result)
+            data_file.close()
+
+        shutil.rmtree(tmpdir)
+        return results

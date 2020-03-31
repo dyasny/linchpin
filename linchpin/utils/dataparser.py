@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+from __future__ import absolute_import
 import yaml
 import json
 import subprocess
@@ -41,7 +42,6 @@ class DataParser(object):
             file_w_path
 
         """
-
         if not data:
             data = '{}'
 
@@ -66,7 +66,7 @@ class DataParser(object):
         return self.load_pinfile(file_w_path)
 
 
-    def render(self, template, context):
+    def render(self, template, context, ordered=True):
         """
         Performs the rendering of template and context data using
         Jinja2.
@@ -78,18 +78,25 @@ class DataParser(object):
             A dictionary of variables to be rendered againt the template
         """
 
-        c = self.parse_json_yaml(context)
-        t = Environment(loader=BaseLoader).from_string(template)
+        # setting ordered=False may be problematic, but it is required until
+        # ansible supports OrderedDict in templates, which can't happen until
+        # it stops supporting python 2.6
+        c = self.parse_json_yaml(context, ordered=False)
+        t = Environment(loader=BaseLoader).from_string(str(template))
         return t.render(c)
 
-    def parse_json_yaml(self, data):
+
+    def parse_json_yaml(self, data, ordered=True):
 
         """ parses yaml file into json object """
 
         d = None
 
         try:
-            data = yaml.load(data, Loader=yamlordereddictloader.Loader)
+            if ordered:
+                data = yaml.load(data, Loader=yamlordereddictloader.Loader)
+            else:
+                data = yaml.load(data, Loader=yaml.FullLoader)
         except Exception as e:
             raise LinchpinError('YAML parsing error: {}'.format(e))
 
@@ -125,7 +132,12 @@ class DataParser(object):
             with open(pinfile, 'r') as stream:
                 pf_data = stream.read()
                 pf = self.parse_json_yaml(pf_data)
-        except ValidationError as e:
+                # ordered hooks gives parsing errors
+                # since hooks are already in lists we need not maintain order
+                pf['hooks'] = self.parse_json_yaml(pf_data,
+                                                   ordered=False).get('hooks',
+                                                                      {})
+        except ValidationError:
             pass
 
         if not pf:

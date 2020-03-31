@@ -1,10 +1,13 @@
 sudo: false
 
+# make ubuntu 16.04 the default version
+dist: bionic
+
 language: python
 
 python:
   - "2.7"
-#  - "3.6"
+  - "3.7"
 
 cache: pip
 
@@ -15,6 +18,7 @@ install:
   - pip install .[tests]
 
 script:
-  - flake8 --exclude=\.eggs,tests,docs --ignore=E124,E303 --max-line-length 80 .
+  - flake8 --exclude=\.eggs,tests,docs,config/Dockerfiles --ignore=E124,E303,W504 --max-line-length 80 .
   - $(which python) setup.py test
 #  - $(which python) $(which nosetests) -s linchpin/tests/*
+  - radon cc -s --min C linchpin

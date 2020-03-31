@@ -1,6 +1,12 @@
-from action_manager import ActionManager
+from __future__ import absolute_import
+from __future__ import print_function
+from .action_manager import ActionManager
+import os
 import sys
+import json
 import subprocess
+import tempfile
+import shutil
 from cerberus import Validator
 
 from linchpin.exceptions import HookError
@@ -8,7 +14,7 @@ from linchpin.exceptions import HookError
 
 class PythonActionManager(ActionManager):
 
-    def __init__(self, name, action_data, target_data, **kwargs):
+    def __init__(self, name, action_data, target_data, state, **kwargs):
 
         """
         PythonActionManager constructor
@@ -29,6 +35,7 @@ class PythonActionManager(ActionManager):
         self.action_data = action_data
         self.target_data = target_data
         self.context = kwargs.get('context', True)
+        self.state = state
         self.kwargs = kwargs
 
 
@@ -43,6 +50,14 @@ class PythonActionManager(ActionManager):
             'type': {'type': 'string', 'allowed': ['python']},
             'path': {'type': 'string', 'required': False},
             'context': {'type': 'boolean', 'required': False},
+            'vault_password_file': {'type': 'string', 'required': False},
+            'src': {
+                'type': 'dict',
+                'schema': {
+                    'type': {'type': 'string', 'required': True},
+                    'url': {'type': 'string', 'required': True}
+                }
+            },
             'actions': {
                 'type': 'list',
                 'schema': {'type': 'string'},
@@ -57,38 +72,62 @@ class PythonActionManager(ActionManager):
             return status
 
 
-    def add_ctx_params(self, file_path, context=True):
+    def add_ctx_params(self, hook_path, results, data_path, context=True):
 
         """
         Adds ctx params to the action_block run when context is true
-        :param file_path: path to the script
+        :param hook_path: path to the script
         :param context: whether the context params are to be included or not
         """
 
-        if not context:
-            return "{0} {1}".format(sys.executable,
-                                    file_path)
-        params = ""
-        for key in self.target_data:
-            params += " {0}={1} ".format(key, self.target_data[key])
-        return "{0} {1} {2}".format(sys.executable,
-                                    file_path,
-                                    params)
+        params = "{0} {1}".format(sys.executable, hook_path)
+        if context:
+            for key in self.target_data:
+                params += " {0}={1} ".format(key, self.target_data[key])
+        params += " -- '{0}' {1}".format(results, data_path)
+        return params
 
 
-    def execute(self):
-
+    def execute(self, results):
         """
         Executes the action_block in the PinFile
         """
 
+        tmpdir = tempfile.mkdtemp()
         for action in self.action_data["actions"]:
+            result = {}
+
+            data_path = os.path.join(tmpdir, action)
             context = self.action_data.get("context", True)
             path = self.action_data["path"]
-            file_path = "{0}/{1}".format(path, action)
-            command = self.add_ctx_params(file_path, context)
-            proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
+            hook_path = "{0}/{1}".format(path, action)
+            res_str = json.dumps(results, separators=(',', ':'))
+            command = self.add_ctx_params(hook_path,
+                                          res_str,
+                                          data_path,
+                                          context)
+            proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE)
             proc.wait()
 
             for line in proc.stdout:
                 print(line)
+
+            try:
+                data_file = open(data_path, 'r')
+                data = data_file.read()
+                if data:
+                    result['data'] = json.loads(data)
+            except IOError:
+                # if an IOError is thrown, the file does not exist
+                continue
+            except ValueError:
+                print("Warning: '{0}' is not a valid JSON object.  "
+                      "Data from this hook will be discarded".format(data))
+            result['return_code'] = proc.returncode
+            result['state'] = str(self.state)
+            results.append(result)
+            data_file.close()
+
+        shutil.rmtree(tmpdir)
+        return results

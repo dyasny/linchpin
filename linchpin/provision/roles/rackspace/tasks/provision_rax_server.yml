@@ -13,7 +13,12 @@
     wait: yes
     state: "{{ state }}"
   register: res_def_output
+  no_log: "{{ not debug_mode }}"
 
 - name: "Append outputitem to topology_outputs"
   set_fact:
     topology_outputs_rax_server: "{{ topology_outputs_rax_server + [res_def_output] }}"
+
+- name: "Add type to resource"
+  set_fact:
+    topology_outputs_rax_server: "{{ topology_outputs_rax_server | add_res_data(res_grp_type, res_def['role']) }}"

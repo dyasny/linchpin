@@ -32,10 +32,11 @@ from linchpin.version import __version__, __short_version__
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    'sphinx.ext.autodoc',
-    'sphinx.ext.autosummary',
-    'sphinx.ext.viewcode',
-    'sphinx.ext.extlinks'
+#    'sphinx.ext.autodoc',
+#    'sphinx.ext.autosummary',
+#    'sphinx.ext.viewcode',
+#    'sphinx.ext.extlinks'
+    'sphinx_automodapi.automodapi'
 ]
 autosummary_generate = True
 
@@ -357,4 +358,9 @@ extlinks = {
     'https://raw.githubusercontent.com/CentOS-PaaS-SIG/linchpin/develop/%s', ''),
     'dirs1.5': (
     'https://github.com/CentOS-PaaS-SIG/linchpin/tree/develop/docs/source/examples/%s', ''),
+    'lp_dir': (
+    'https://github.com/herlo/linchpin/tree/fetch_by_branch/%s', ''),
+    'lp_code': (
+    'https://raw.githubusercontent.com/herlo/linchpin/fetch_by_branch/%s', ''),
 }
+

@@ -1,9 +1,19 @@
+from __future__ import absolute_import
+
 from abc import ABCMeta, abstractmethod
+import six
 
 
-class RunDB(object):
+def usedb(func):
+    def func_wrapper(*args, **kwargs):
+        args[0]._opendb()
+        x = func(*args, **kwargs)
+        args[0]._closedb()
+        return x
+    return func_wrapper
 
-    __metaclass__ = ABCMeta
+
+class RunDB(six.with_metaclass(ABCMeta, object)):
 
     @abstractmethod
     def init_table(self, table):
@@ -14,15 +24,19 @@ class RunDB(object):
         return self.driver.update_record(table, run_id, key, value)
 
     @abstractmethod
-    def get_tx_record(self, tx_id):
-        return self.driver.get_tx_record(tx_id)
+    def get_tx_record(self, table, tx_id):
+        return self.driver.get_tx_record(table, tx_id)
 
-    def get_tx_records(self, tx_ids):
-        return self.driver.get_tx_records(tx_ids)
+    def get_tx_records(self, table, tx_ids):
+        return self.driver.get_tx_records(table, tx_ids)
+
+    @abstractmethod
+    def get_run_id(self, table, action='up'):
+        return self.driver.get_run_id(table, action=action)
 
     @abstractmethod
     def get_record(self, table, action='up', run_id=None):
-        return self.driver.get_record(table, run_id=run_id)
+        return self.driver.get_record(table, action=action, run_id=run_id)
 
     @abstractmethod
     def get_records(self, table=[], count=10):

@@ -1,7 +1,9 @@
+from __future__ import absolute_import
 import os
 
 import tempfile
-import ConfigParser
+from six.moves import configparser as ConfigParser
+from six import iteritems
 
 from linchpin.exceptions import LinchpinError
 
@@ -13,7 +15,7 @@ Provide valid context data to test against.
 
 class ContextData(object):
 
-    def __init__(self, parser=ConfigParser.SafeConfigParser):
+    def __init__(self, parser=ConfigParser.ConfigParser):
 
 
         self.lib_path = '{0}'.format(os.path.dirname(
@@ -81,7 +83,7 @@ class ContextData(object):
         """
 
         try:
-            config = ConfigParser.SafeConfigParser()
+            config = ConfigParser.ConfigParser()
             f = open(path)
             config.readfp(f)
             f.close()
@@ -138,9 +140,9 @@ class ContextData(object):
 
         # we know that data is a dict, containing dicts
         try:
-            for k, v in config_data.iteritems():
+            for k, v in iteritems(config_data):
                 self.parser.add_section(k)
-                for kv, vv in v.iteritems():
+                for kv, vv in iteritems(v):
                     if type(vv) is not str:
                         vv = str(vv)
                     self.parser.set(k, kv, vv)

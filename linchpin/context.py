@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+from __future__ import absolute_import
 import os
 import logging
 
@@ -13,7 +14,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 try:
     import configparser as ConfigParser
 except ImportError:
-    import ConfigParser as ConfigParser
+    import configparser as ConfigParser
 
 
 class LinchpinContext(object):
@@ -31,12 +32,15 @@ class LinchpinContext(object):
 
         self.version = __version__
         self.verbosity = 1
+        self.no_monitor = False
 
         self.lib_path = '{0}'.format(os.path.dirname(
                                      os.path.realpath(__file__)))
 
         self.cfgs = {}
         self._load_constants()
+        self.env_vars = ()
+        self.use_shell = False
 
 
     def _load_constants(self):
@@ -49,12 +53,55 @@ class LinchpinContext(object):
         self._parse_config(constants_file)
 
 
-    def load_config(self, search_path=None):
+    def load_config(self, workspace=None, config_path=None, search_path=None):
         """
+
         Update self.cfgs from the linchpin configuration file (linchpin.conf).
 
-        NOTE: Must be implemented by a subclass
+        The following paths are used to find the config file.
+        The search path defaults to the first-found order::
+
+          * /etc/linchpin.conf
+          * /linchpin/library/path/linchpin.conf
+          * <workspace>/linchpin.conf
+
+        An alternate search_path can be passed.
+
+        :param search_path: A list of paths to search a linchpin config
+        (default: None)
         """
+
+        if workspace:
+            self.workspace = os.path.realpath(workspace)
+
+        if workspace in dir(self):
+            self.workspace = os.path.realpath(os.path.curdir)
+
+        expanded_path = None
+
+        if config_path:
+            CONFIG_PATH = [config_path]
+        else:
+            CONFIG_PATH = [
+                '/etc/linchpin.conf',
+                '~/.config/linchpin/linchpin.conf',
+            ]
+            if workspace in dir(self):
+                CONFIG_PATH.append('{0}/linchpin.conf'.format(self.workspace))
+
+        existing_paths = []
+        for path in CONFIG_PATH:
+            expanded_path = (
+                "{0}".format(os.path.realpath(os.path.expanduser(path))))
+
+            # implement first found
+            if os.path.exists(expanded_path):
+                # logging before the config file is setup doesn't work
+                # if messages are needed before this, use print.
+                existing_paths.append(expanded_path)
+
+        for path in existing_paths:
+            self._parse_config(path)
 
         pass
 
@@ -67,9 +114,9 @@ class LinchpinContext(object):
         """
 
         try:
-            config = ConfigParser.SafeConfigParser()
+            config = ConfigParser.ConfigParser()
             f = open(path)
-            config.readfp(f)
+            config.read_file(f)
             f.close()
 
             for section in config.sections():
@@ -106,6 +153,12 @@ class LinchpinContext(object):
         """
 
         self.evars = self.cfgs.get('evars', {})
+        env_vars = self.cfgs.get('env_vars', {})
+        env_vars_list = list(self.env_vars)
+        for k in env_vars:
+            env_vars_list.append((k, env_vars[k]))
+        self.env_vars = tuple(env_vars_list)
+
 
 
     def get_cfg(self, section=None, key=None, default=None):
@@ -173,6 +226,46 @@ class LinchpinContext(object):
         self.set_cfg('evars', key, value)
 
 
+    def get_env_vars(self, key=None, default=None):
+        """
+        Get the current env_vars
+
+        :param key: key to use
+
+        :param default: default value to return if nothing is found
+        (default: None)
+        """
+
+        if key:
+            for kv in self.env_vars:
+                if key == kv[0]:
+                    return kv[1]
+            return default
+        return self.env_vars
+
+
+    def set_env_vars(self, key, value):
+        """
+        Set a value into env_vars. Does not persist into a file,
+        only during the current execution.
+
+        :param key: key to use
+
+        :param value: value to set into evars
+        """
+        env_vars_tuple = self.env_vars
+        env_vars_tuple = [x for x in env_vars_tuple]
+        set_env = False
+        for kv in self.env_vars:
+            if key == kv[0]:
+                env_vars_tuple.remove(kv)
+                env_vars_tuple.append((key, value))
+                set_env = True
+        if not set_env:
+            env_vars_tuple.append((key, value))
+        self.env_vars = tuple(env_vars_tuple)
+
+
     def setup_logging(self):
 
         """
@@ -183,15 +276,17 @@ class LinchpinContext(object):
         """
 
         self.console = logging.getLogger('lp_console')
-        self.console.setLevel(logging.INFO)
+        if not self.console.handlers:
+            self.console.setLevel(logging.INFO)
 
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.INFO)
+            ch = logging.StreamHandler()
+            ch.setLevel(logging.INFO)
 
-        formatter = logging.Formatter('%(levelname)s %(asctime)s %(message)s')
-        ch.setFormatter(formatter)
+            formatter = \
+                logging.Formatter('%(levelname)s %(asctime)s %(message)s')
+            ch.setFormatter(formatter)
 
-        self.console.addHandler(ch)
+            self.console.addHandler(ch)
 
 
     def log(self, msg, **kwargs):
